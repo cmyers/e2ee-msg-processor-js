@@ -14,15 +14,21 @@ const KEY_ALGO = {
     'length': 128
 };
 
-interface OmemoMessage {
-    key_Base64: string
-    tag_Base64: string,
-    key_and_tag_Base64: string,
-    payload_Base64: string,
-    iv_Base64: string
+interface EncryptedMessage {
+    key_base64: string
+    tag_base64: string,
+    key_and_tag_base64: string,
+    payload_base64: string,
+    iv_base64: string
 }
 
-async function encryptMessage (plaintext: string): Promise<OmemoMessage> {
+interface OmemoMessage {
+    key_base64: string,
+    iv_base64: string,
+    payload_base64: string
+}
+
+async function encryptMessage(plaintext: string): Promise<EncryptedMessage> {
     // The client MUST use fresh, randomly generated key/IV pairs
     // with AES-128 in Galois/Counter Mode (GCM).
 
@@ -47,20 +53,23 @@ async function encryptMessage (plaintext: string): Promise<OmemoMessage> {
         exported_key = await crypto.subtle.exportKey('raw', key);
 
     return {
-        key_Base64: DataUtils.arrayBufferToBase64String(exported_key),
-        tag_Base64: DataUtils.arrayBufferToBase64String(tag),
-        key_and_tag_Base64: DataUtils.arrayBufferToBase64String(DataUtils.appendArrayBuffer(exported_key, tag)),
-        payload_Base64: DataUtils.arrayBufferToBase64String(ciphertext),
-        iv_Base64: DataUtils.arrayBufferToBase64String(iv)
+        key_base64: DataUtils.arrayBufferToBase64String(exported_key),
+        tag_base64: DataUtils.arrayBufferToBase64String(tag),
+        key_and_tag_base64: DataUtils.arrayBufferToBase64String(DataUtils.appendArrayBuffer(exported_key, tag)),
+        payload_base64: DataUtils.arrayBufferToBase64String(ciphertext),
+        iv_base64: DataUtils.arrayBufferToBase64String(iv)
     };
 }
 
-async function decryptMessage (obj: OmemoMessage): Promise<string> {
-    const key_obj = await crypto.subtle.importKey('raw', DataUtils.base64StringToArrayBuffer(obj.key_Base64), KEY_ALGO, true, ['encrypt', 'decrypt']);
-    const cipher = DataUtils.appendArrayBuffer(DataUtils.base64StringToArrayBuffer(obj.payload_Base64), DataUtils.base64StringToArrayBuffer(obj.tag_Base64));
+async function decryptMessage(obj: OmemoMessage): Promise<string> {
+    const key = DataUtils.base64StringToArrayBuffer(obj.key_base64).slice(0, 16);
+    const tag = DataUtils.base64StringToArrayBuffer(obj.key_base64).slice(16);
+
+    const key_obj = await crypto.subtle.importKey('raw', key, KEY_ALGO, true, ['encrypt', 'decrypt']);
+    const cipher = DataUtils.appendArrayBuffer(DataUtils.base64StringToArrayBuffer(obj.payload_base64), tag);
     const algo = {
         'name': 'AES-GCM',
-        'iv': DataUtils.base64StringToArrayBuffer(obj.iv_Base64),
+        'iv': DataUtils.base64StringToArrayBuffer(obj.iv_base64),
         'tagLength': TAG_LENGTH
     };
     return DataUtils.arrayBufferToString(await crypto.subtle.decrypt(algo, key_obj, cipher));
@@ -140,74 +149,68 @@ Promise.all([
         var aliceSessionCipher = new libsignal.SessionCipher(aliceStore, BOB_ADDRESS);
         var bobSessionCipher = new libsignal.SessionCipher(bobStore, ALICE_ADDRESS);
 
-        const toSend = JSON.stringify(await encryptMessage(`messageToBobFromAlice${aliceCounter++}`));
-        //const toSend = await encryptMessage(`messageToBobFromAlice${aliceCounter++}`);
-        console.log(chalk.red(`Alice Encrypts: ${toSend}`));
-        aliceSessionCipher.encrypt(new TextEncoder().encode(toSend).buffer).then(async function (ciphertext) {
-            if (ciphertext.body) {
-                console.log(chalk.red(ciphertext.body));
-                console.log(chalk.red(`Bob receives: ${ciphertext.body}`));
-                console.log(chalk.green(`Bob Decrypts`));
-                // check for ciphertext.type to be 3 which includes the PREKEY_BUNDLE
-                const msg = DataUtils.arrayBufferToString(await bobSessionCipher.decryptPreKeyWhisperMessage(ciphertext.body, 'binary'));
-                console.log(chalk.red(`Bob decrypts inner msg: ${msg}`));
-                return await decryptMessage(JSON.parse(msg) as OmemoMessage);
-            }
-            return null;
 
-        }).then(async function (plaintext) {
-            console.log(chalk.green(plaintext));
-            const toSend = JSON.stringify(await encryptMessage(`messageToAliceFromBob${bobCounter++}`));
-            console.log(chalk.red(`Bob Encrypts: ${toSend}`));
-            bobSessionCipher.encrypt(new TextEncoder().encode(toSend).buffer).then(async function (ciphertext) {
-                if (ciphertext.body) {
-                    console.log(chalk.red(ciphertext.body));
-                    console.log(chalk.green(`Alice Decrypts`));
-                    const msg = DataUtils.arrayBufferToString(await aliceSessionCipher.decryptWhisperMessage(ciphertext.body, 'binary'));
-                    return await decryptMessage(JSON.parse(msg) as OmemoMessage);
-                }
-                return null;
-
-            }).then(function (plaintext) {
-                console.log(chalk.green(plaintext));
-            });
-        });
 
         setInterval(async () => {
-            //console.log(await aliceSessionCipher.storage.loadSession(`${BOB_ADDRESS.getName()}.${BOB_ADDRESS.getDeviceId()}`));
-            //console.log(await bobSessionCipher.storage.loadSession(`${ALICE_ADDRESS.getName()}.${ALICE_ADDRESS.getDeviceId()}`));
-            const toSend = JSON.stringify(await encryptMessage(`messageToBobFromAlice${aliceCounter++}`));
+            const toSend = `messageToBobFromAlice${aliceCounter++}`;
+            const encryptedMessage = (await encryptMessage(toSend));
+
             console.log(chalk.red(`Alice Encrypts: ${toSend}`));
-            aliceSessionCipher.encrypt(DataUtils.stringToArrayBuffer(toSend)).then(async function (ciphertext) {
+            aliceSessionCipher.encrypt(DataUtils.base64StringToArrayBuffer(encryptedMessage.key_and_tag_base64)).then(async function (ciphertext) {
                 if (ciphertext.body) {
-                    console.log(chalk.red(ciphertext.body));
+
+                    const omemoMessage: OmemoMessage = {
+                        iv_base64: encryptedMessage.iv_base64,
+                        key_base64: DataUtils.encodeBase64(ciphertext.body),
+                        payload_base64: encryptedMessage.payload_base64
+                    }
+
+                    console.log(chalk.red(`Bob receives: ${JSON.stringify(omemoMessage)}`));
+                    console.log(chalk.green(`Bob Decrypts`));
                     // check for ciphertext.type to be 3 which includes the PREKEY_BUNDLE
-                    const msg = DataUtils.arrayBufferToString(await bobSessionCipher.decryptWhisperMessage(ciphertext.body, 'binary'));
-                    console.log(chalk.red(`Bob decrypts inner msg: ${msg}`));
-                    return await decryptMessage(JSON.parse(msg) as OmemoMessage);
+                    let msg: ArrayBuffer;
+                    if (ciphertext.type === 3) {
+                        msg = await bobSessionCipher.decryptPreKeyWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
+                    } else {
+                        msg = await bobSessionCipher.decryptWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
+                    }
+
+                    omemoMessage.key_base64 = DataUtils.arrayBufferToBase64String(msg);
+                    console.log(chalk.red(`Bob decrypts inner msg: ${omemoMessage.key_base64}`));
+
+                    return await decryptMessage(omemoMessage);
                 }
                 return null;
 
             }).then(async function (plaintext) {
                 console.log(chalk.green(plaintext));
-                const toSend = JSON.stringify(await encryptMessage(`messageToAliceFromBob${bobCounter++}`));
+
+                const toSend = `messageToAliceFromBob${bobCounter++}`;
                 console.log(chalk.red(`Bob Encrypts: ${toSend}`));
-                bobSessionCipher.encrypt(DataUtils.stringToArrayBuffer(toSend)).then(async function (ciphertext) {
-                    if (ciphertext.body) {     
-                        console.log(chalk.red(ciphertext.body));
+
+                bobSessionCipher.encrypt(DataUtils.base64StringToArrayBuffer(encryptedMessage.key_and_tag_base64)).then(async function (ciphertext) {
+                    if (ciphertext.body) {
+
+                        const omemoMessage: OmemoMessage = {
+                            iv_base64: encryptedMessage.iv_base64,
+                            key_base64: DataUtils.encodeBase64(ciphertext.body),
+                            payload_base64: encryptedMessage.payload_base64
+                        }
+
+                        console.log(chalk.red(`Alice receives: ${JSON.stringify(omemoMessage)}`));
                         console.log(chalk.green(`Alice Decrypts`));
-                        const msg = DataUtils.arrayBufferToString(await aliceSessionCipher.decryptWhisperMessage(ciphertext.body, 'binary'));
-                        return await decryptMessage(JSON.parse(msg) as OmemoMessage);
+                        const msg = await aliceSessionCipher.decryptWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
+                        omemoMessage.key_base64 = DataUtils.arrayBufferToBase64String(msg);
+                        console.log(chalk.red(`Alice decrypts inner msg: ${omemoMessage.key_base64}`));
+
+                        return await decryptMessage(omemoMessage);
                     }
                     return null;
 
                 }).then(function (plaintext) {
-                    //const base64Str = DataUtils.arrayBufferToBase64String(plaintext as ArrayBuffer);
-                    //console.log(chalk.green(DataUtils.decodeBase64(base64Str)));
                     console.log(chalk.green(plaintext));
                 });
             });
-
         }, 2000);
     });
 });
