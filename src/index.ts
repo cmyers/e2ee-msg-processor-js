@@ -166,7 +166,6 @@ Promise.all([
                     }
 
                     console.log(chalk.red(`Bob receives: ${JSON.stringify(omemoMessage)}`));
-                    console.log(chalk.green(`Bob Decrypts`));
                     // check for ciphertext.type to be 3 which includes the PREKEY_BUNDLE
                     let msg: ArrayBuffer;
                     if (ciphertext.type === 3) {
@@ -183,9 +182,10 @@ Promise.all([
                 return null;
 
             }).then(async function (plaintext) {
-                console.log(chalk.green(plaintext));
+                console.log(chalk.green(`Bob Decrypts: ${plaintext}`));
 
                 const toSend = `messageToAliceFromBob${bobCounter++}`;
+                const encryptedMessage = (await encryptMessage(toSend));
                 console.log(chalk.red(`Bob Encrypts: ${toSend}`));
 
                 bobSessionCipher.encrypt(DataUtils.base64StringToArrayBuffer(encryptedMessage.key_and_tag_base64)).then(async function (ciphertext) {
@@ -198,7 +198,6 @@ Promise.all([
                         }
 
                         console.log(chalk.red(`Alice receives: ${JSON.stringify(omemoMessage)}`));
-                        console.log(chalk.green(`Alice Decrypts`));
                         const msg = await aliceSessionCipher.decryptWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
                         omemoMessage.key_base64 = DataUtils.arrayBufferToBase64String(msg);
                         console.log(chalk.red(`Alice decrypts inner msg: ${omemoMessage.key_base64}`));
@@ -208,7 +207,7 @@ Promise.all([
                     return null;
 
                 }).then(function (plaintext) {
-                    console.log(chalk.green(plaintext));
+                    console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
                 });
             });
         }, 2000);
