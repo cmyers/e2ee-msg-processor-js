@@ -120,10 +120,10 @@ function generatePreKeyBundle(store: SignalProtocolStore, preKeyId: number, sign
     });
 }
 
-//TODO study the encryption and decryption that converse.js does
+// TODO study the encryption and decryption that converse.js does
 // https://github.com/conversejs/converse.js/blob/a4b90e3ab214647c44d048f9a54ee609e40206b5/src/plugins/omemo/utils.js#L17
 
-//Does it relate to the current spec? https://xmpp.org/extensions/xep-0384.html
+// Does it relate to the current spec? https://xmpp.org/extensions/xep-0384.html
 
 var ALICE_ADDRESS = new libsignal.SignalProtocolAddress("alice@localhost", KeyHelper.generateRegistrationId());
 var BOB_ADDRESS = new libsignal.SignalProtocolAddress("bob@localhost", KeyHelper.generateRegistrationId());
@@ -148,8 +148,6 @@ Promise.all([
     process.then(async () => {
         var aliceSessionCipher = new libsignal.SessionCipher(aliceStore, BOB_ADDRESS);
         var bobSessionCipher = new libsignal.SessionCipher(bobStore, ALICE_ADDRESS);
-
-
 
         setInterval(async () => {
             const toSend = `messageToBobFromAlice${aliceCounter++}`;
