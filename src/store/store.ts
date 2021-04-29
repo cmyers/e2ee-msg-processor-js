@@ -3,6 +3,18 @@ import { Direction, KeyPairType, StorageType } from '@privacyresearch/libsignal-
 
 export class SignalProtocolStore implements StorageType {
 
+  private store: NamespacedStore;
+  public loaded: Promise<boolean>;
+
+  constructor(id: string) {
+    this.store = new NamespacedStore(id, new LocalStorageStore(id));
+    this.loaded = this.store.loaded;
+  }
+
+  containsKey(key: string): boolean {
+    return this.store.containsKey(key);
+  }
+
   getIdentityKeyPair() {
     const identity = this.store.get('identityKey');
     if (identity === null) {
@@ -14,8 +26,6 @@ export class SignalProtocolStore implements StorageType {
       privKey: DataUtils.base64StringToArrayBuffer(identity.privKey),
     });
   }
-
-  private store = new NamespacedStore('namespace', new LocalStorageStore());
 
   saveIdentity(encodedAddress: string, publicKey: ArrayBuffer, nonblockingApproval?: boolean | undefined) {
     if (encodedAddress === null || encodedAddress === undefined)
@@ -106,7 +116,7 @@ export class SignalProtocolStore implements StorageType {
     });
   }
 
-  storeLocalRegistrationId(id: number): Map<any, any> {
+  storeLocalRegistrationId(id: number): Promise<Map<any, any>> {
     return this.store.set('registrationId', id);
   }
 
@@ -192,15 +202,25 @@ export class SignalProtocolStore implements StorageType {
 
       return Buffer.from(whipser);
   }
+
+  hasItems() {
+    return this.store.hasItems();
+  }
 }
 
 export class NamespacedStore {
   private store: LocalStorageStore;
   private prefix: string;
+  public loaded: Promise<boolean>;
 
   constructor(prefix: string, store: LocalStorageStore) {
     this.store = store;
+    this.loaded = this.store.loaded;
     this.prefix = prefix;
+  }
+
+  containsKey(key: string): boolean {
+    return this.store.containsKey(key);
   }
 
   buildKey(key: string) {
@@ -222,10 +242,43 @@ export class NamespacedStore {
   has(key: string) {
     return this.store.has(key);
   }
+
+  hasItems(): boolean {
+    return this.store.hasItems();
+  }
 }
 
 export class LocalStorageStore {
   private localStorage = new Map();
+  private id: string;
+  public loaded: Promise<boolean>;
+
+  constructor(id: string) {
+    this.id = id;
+    this.loaded = this.init();
+  }
+
+  async init(): Promise<boolean> {
+    const store = await DataUtils.readStorage(this.id);
+
+    if(store != null) {
+      const storeTemp = JSON.parse(store);
+      for (var value in storeTemp) {  
+        this.localStorage.set(value, storeTemp[value]);
+      }
+      return true; 
+    }
+    return false;
+  }
+
+  containsKey(key: string): boolean {
+    const keys = Array.from(this.localStorage.keys());
+    return keys.some(x => x.includes(key));
+  }
+
+  hasItems(): boolean {
+    return this.localStorage.size > 0;
+  }
 
   get(key: string, default_ = null) {
 
@@ -244,10 +297,14 @@ export class LocalStorageStore {
     }
   }
 
-  set(key: string, value: any) {
-    //console.log('setKey: ', key);
-    //console.log('setValue: ', value);
-    return this.localStorage.set(key, value);
+  async set(key: string, value: any) {
+    const map = this.localStorage.set(key, value);
+    let jsonObject: any = {};  
+    map.forEach((value, key) => {  
+        jsonObject[key] = value  
+    });
+    await DataUtils.writeStorage(this.id, JSON.stringify(jsonObject));
+    return map;
   }
 
   remove(key: string) {
@@ -260,6 +317,26 @@ export class LocalStorageStore {
 }
 
 export class DataUtils {
+
+  static async writeStorage(id: string, data: string): Promise<void> {
+    const fs = require('fs');
+    return new Promise((resolve, reject) =>
+    fs.writeFile(id, data, (err:any, data:any) => {
+        if (err) reject(err);
+        resolve();
+      })
+    );
+  }
+
+  static async readStorage(id: string): Promise<string> {
+    const fs = require('fs');
+    return new Promise((resolve, reject) =>
+      fs.readFile(id, (err:any, data:any) => {
+        resolve(data);
+      })
+    );
+  }
+
   static arrayBufferToBase64String(arrayBuffer: ArrayBuffer): string {
     return Buffer.from(arrayBuffer).toString('base64');
   }
