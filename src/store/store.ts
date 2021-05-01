@@ -4,11 +4,9 @@ import { Direction, KeyPairType, StorageType } from '@privacyresearch/libsignal-
 export class SignalProtocolStore implements StorageType {
 
   private store: NamespacedStore;
-  public loaded: Promise<boolean>;
 
   constructor(id: string) {
-    this.store = new NamespacedStore(id, new LocalStorageStore(id));
-    this.loaded = this.store.loaded;
+    this.store = new NamespacedStore(id, new LocalStorageStore());
   }
 
   containsKey(key: string): boolean {
@@ -211,11 +209,9 @@ export class SignalProtocolStore implements StorageType {
 export class NamespacedStore {
   private store: LocalStorageStore;
   private prefix: string;
-  public loaded: Promise<boolean>;
 
   constructor(prefix: string, store: LocalStorageStore) {
     this.store = store;
-    this.loaded = this.store.loaded;
     this.prefix = prefix;
   }
 
@@ -250,26 +246,6 @@ export class NamespacedStore {
 
 export class LocalStorageStore {
   private localStorage = new Map();
-  private id: string;
-  public loaded: Promise<boolean>;
-
-  constructor(id: string) {
-    this.id = id;
-    this.loaded = this.init();
-  }
-
-  async init(): Promise<boolean> {
-    const store = await DataUtils.readStorage(this.id);
-
-    if(store != null) {
-      const storeTemp = JSON.parse(store);
-      for (var value in storeTemp) {  
-        this.localStorage.set(value, storeTemp[value]);
-      }
-      return true; 
-    }
-    return false;
-  }
 
   containsKey(key: string): boolean {
     const keys = Array.from(this.localStorage.keys());
@@ -301,9 +277,8 @@ export class LocalStorageStore {
     const map = this.localStorage.set(key, value);
     let jsonObject: any = {};  
     map.forEach((value, key) => {  
-        jsonObject[key] = value  
+        jsonObject[key] = value // TODO store this
     });
-    await DataUtils.writeStorage(this.id, JSON.stringify(jsonObject));
     return map;
   }
 
@@ -317,25 +292,6 @@ export class LocalStorageStore {
 }
 
 export class DataUtils {
-
-  static async writeStorage(id: string, data: string): Promise<void> {
-    const fs = require('fs');
-    return new Promise((resolve, reject) =>
-    fs.writeFile(id, data, (err:any, data:any) => {
-        if (err) reject(err);
-        resolve();
-      })
-    );
-  }
-
-  static async readStorage(id: string): Promise<string> {
-    const fs = require('fs');
-    return new Promise((resolve, reject) =>
-      fs.readFile(id, (err:any, data:any) => {
-        resolve(data);
-      })
-    );
-  }
 
   static arrayBufferToBase64String(arrayBuffer: ArrayBuffer): string {
     return Buffer.from(arrayBuffer).toString('base64');
