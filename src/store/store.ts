@@ -63,14 +63,9 @@ export class SignalProtocolStore implements StorageType {
   }
 
   get(key: string, default_ = null) {
-
     const item = this.store.get(key);
     //console.log('get: ', key);
     //console.log('value', item);
-
-    if (item === null) {
-      return default_;
-    }
 
     try {
       return item;
