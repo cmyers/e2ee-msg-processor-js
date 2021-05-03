@@ -121,35 +121,32 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
         });
     }
 
-    // TODO study the encryption and decryption that converse.js does
-    // https://github.com/conversejs/converse.js/blob/a4b90e3ab214647c44d048f9a54ee609e40206b5/src/plugins/omemo/utils.js#L17
+    const aliceStore = new SignalProtocolStore("alice_localhost");
+    const bobStore = new SignalProtocolStore("bob_localhost");
 
-    // Does it relate to the current spec? https://xmpp.org/extensions/xep-0384.html
+    const hasSession = aliceStore.containsKey('session') && bobStore.containsKey('session');
 
-    var ALICE_ADDRESS = new libsignal.SignalProtocolAddress("alice@localhost", 1234);
-    var BOB_ADDRESS = new libsignal.SignalProtocolAddress("bob@localhost", 5678);
-
-    // TODO load sessions from file
-    var aliceStore = new SignalProtocolStore("alice_localhost");
-    var bobStore = new SignalProtocolStore("bob_localhost");
-
-    var bobPreKeyId = KeyHelper.generateRegistrationId();
-    var bobSignedKeyId = KeyHelper.generateRegistrationId();
-
-
-    const hasSession = aliceStore.containsKey('session');
     let aliceCounter = 0;
     let bobCounter = 0;
-    var aliceSessionCipher: libsignal.SessionCipher;
-    var bobSessionCipher: libsignal.SessionCipher;
+
+    let aliceSessionCipher: libsignal.SessionCipher;
+    let bobSessionCipher: libsignal.SessionCipher;
 
     if (hasSession) {
+        const ALICE_ADDRESS = new libsignal.SignalProtocolAddress("alice@localhost", aliceStore.get('registrationId'));
+        const BOB_ADDRESS = new libsignal.SignalProtocolAddress("bob@localhost", bobStore.get('registrationId'));
         console.log(chalk.cyan(`${ALICE_ADDRESS.getName()} has a session with ${BOB_ADDRESS.getName()}`));
         aliceSessionCipher = new SessionCipher(aliceStore, BOB_ADDRESS);
         bobSessionCipher = new SessionCipher(bobStore, ALICE_ADDRESS);
     } else {
+        const bobPreKeyId = KeyHelper.generateRegistrationId();
+        const bobSignedKeyId = KeyHelper.generateRegistrationId();
         await generateIdentity(aliceStore);
         await generateIdentity(bobStore);
+
+        const ALICE_ADDRESS = new libsignal.SignalProtocolAddress("alice@localhost", aliceStore.get('registrationId'));
+        const BOB_ADDRESS = new libsignal.SignalProtocolAddress("bob@localhost", bobStore.get('registrationId'));
+        
         const preKeyBundle = await generatePreKeyBundle(bobStore, bobPreKeyId, bobSignedKeyId);
 
         var builder = new libsignal.SessionBuilder(aliceStore, BOB_ADDRESS);
