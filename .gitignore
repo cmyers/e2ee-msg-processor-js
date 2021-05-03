@@ -1,6 +1,7 @@
 /node_modules
 /dist
+/localstorage
 
-#vscode
+#vs
 /.vscode
 /.vs

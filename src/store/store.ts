@@ -1,12 +1,13 @@
 import * as libsignal from '@privacyresearch/libsignal-protocol-typescript'
 import { Direction, KeyPairType, StorageType } from '@privacyresearch/libsignal-protocol-typescript';
+import { LocalStorage } from 'node-localstorage';
 
 export class SignalProtocolStore implements StorageType {
 
   private store: NamespacedStore;
 
   constructor(id: string) {
-    this.store = new NamespacedStore(id, new LocalStorageStore());
+    this.store = new NamespacedStore(id, new LocalStorageStore(id));
   }
 
   containsKey(key: string): boolean {
@@ -101,7 +102,7 @@ export class SignalProtocolStore implements StorageType {
       throw new Error("Expected identityKey to be an ArrayBuffer");
     }
     var trusted = this.get('identityKey/' + identifier);
-    if (trusted === undefined) {
+    if (trusted == null) {
       return Promise.resolve(true);
     }
     return Promise.resolve(DataUtils.arrayBufferToBase64String(identityKey) === trusted);
@@ -114,7 +115,7 @@ export class SignalProtocolStore implements StorageType {
     });
   }
 
-  storeLocalRegistrationId(id: number): Promise<Map<any, any>> {
+  storeLocalRegistrationId(id: number) {
     return this.store.set('registrationId', id);
   }
 
@@ -180,25 +181,25 @@ export class SignalProtocolStore implements StorageType {
   }
 
   async hasDeviceIds(jid: string) {
-      return this.store.has(`contact/${jid}/device-ids`);
+    return this.store.has(`contact/${jid}/device-ids`);
   }
 
   async storeDeviceIds(jid: string, deviceIds: number[]) {
-      this.store.set(`contact/${jid}/device-ids`, Array.from(deviceIds));
+    this.store.set(`contact/${jid}/device-ids`, Array.from(deviceIds));
   }
 
   async storeWhisper(address: string, id: number, whisper: string) {
-      this.store.set(`whisper/${address}/${id}`, Buffer.from(whisper));
+    this.store.set(`whisper/${address}/${id}`, Buffer.from(whisper));
   }
 
-  async getWhisper(address:string, id: number) {
-      const whipser = this.store.get(`whisper/${address}/${id}`);
+  async getWhisper(address: string, id: number) {
+    const whipser = this.store.get(`whisper/${address}/${id}`);
 
-      if (whipser === null) {
-          return undefined;
-      }
+    if (whipser === null) {
+      return undefined;
+    }
 
-      return Buffer.from(whipser);
+    return Buffer.from(whipser);
   }
 
   hasItems() {
@@ -224,15 +225,21 @@ export class NamespacedStore {
   }
 
   get(key: string, default_ = null) {
-    return this.store.get(this.buildKey(key), default_)
+    const item = this.store.get(key);
+    if(item) {
+      const parsed = JSON.parse(item);
+      return parsed;
+    }
+    return default_;
   }
 
   set(key: string, value: any) {
-    return this.store.set(this.buildKey(key), value);
+    const item = JSON.stringify(value);
+    return this.store.set(key, item);
   }
 
   delete(key: string) {
-    this.store.remove(this.buildKey(key));
+    this.store.remove(key);
   }
 
   has(key: string) {
@@ -245,20 +252,29 @@ export class NamespacedStore {
 }
 
 export class LocalStorageStore {
-  private localStorage = new Map();
+
+  private localStorage: LocalStorage;
+
+  constructor(location: string) {
+    this.localStorage = new LocalStorage(`./local_storage/${location}`);
+  }
 
   containsKey(key: string): boolean {
-    const keys = Array.from(this.localStorage.keys());
-    return keys.some(x => x.includes(key));
+    for (let i in this.localStorage) {
+      if (i.includes(key)) {
+        return true;
+      }
+    }
+    return false;
   }
 
   hasItems(): boolean {
-    return this.localStorage.size > 0;
+    return this.localStorage.length > 0;
   }
 
   get(key: string, default_ = null) {
 
-    const item = this.localStorage.get(key);
+    const item = this.localStorage.getItem(key);
     //console.log('get: ', key);
     //console.log('value', item);
 
@@ -273,21 +289,16 @@ export class LocalStorageStore {
     }
   }
 
-  async set(key: string, value: any) {
-    const map = this.localStorage.set(key, value);
-    let jsonObject: any = {};  
-    map.forEach((value, key) => {  
-        jsonObject[key] = value // TODO store this
-    });
-    return map;
+  set(key: string, value: any): void {
+    this.localStorage.setItem(key, value);
   }
 
   remove(key: string) {
-    return this.localStorage.delete(key);
+    return this.localStorage.removeItem(key);
   }
 
   has(key: string) {
-    return this.localStorage.get(key) !== null;
+    return this.localStorage.getItem(key) !== null;
   }
 }
 

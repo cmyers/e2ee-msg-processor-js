@@ -152,7 +152,7 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
         const preKeyBundle = await generatePreKeyBundle(bobStore, bobPreKeyId, bobSignedKeyId);
 
         var builder = new libsignal.SessionBuilder(aliceStore, BOB_ADDRESS);
-        builder.processPreKey(preKeyBundle as DeviceType<ArrayBuffer>);
+        await builder.processPreKey(preKeyBundle as DeviceType<ArrayBuffer>);
         aliceSessionCipher = new libsignal.SessionCipher(aliceStore, BOB_ADDRESS);
         bobSessionCipher = new libsignal.SessionCipher(bobStore, ALICE_ADDRESS);
     }
