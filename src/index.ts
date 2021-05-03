@@ -135,12 +135,15 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
     if (hasSession) {
         const ALICE_ADDRESS = new libsignal.SignalProtocolAddress("alice@localhost", aliceStore.get('registrationId'));
         const BOB_ADDRESS = new libsignal.SignalProtocolAddress("bob@localhost", bobStore.get('registrationId'));
+
         console.log(chalk.cyan(`${ALICE_ADDRESS.getName()} has a session with ${BOB_ADDRESS.getName()}`));
+
         aliceSessionCipher = new SessionCipher(aliceStore, BOB_ADDRESS);
         bobSessionCipher = new SessionCipher(bobStore, ALICE_ADDRESS);
     } else {
         const bobPreKeyId = KeyHelper.generateRegistrationId();
         const bobSignedKeyId = KeyHelper.generateRegistrationId();
+
         await generateIdentity(aliceStore);
         await generateIdentity(bobStore);
 
@@ -151,6 +154,7 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
 
         var builder = new libsignal.SessionBuilder(aliceStore, BOB_ADDRESS);
         await builder.processPreKey(preKeyBundle as DeviceType<ArrayBuffer>);
+        
         aliceSessionCipher = new libsignal.SessionCipher(aliceStore, BOB_ADDRESS);
         bobSessionCipher = new libsignal.SessionCipher(bobStore, ALICE_ADDRESS);
     }
