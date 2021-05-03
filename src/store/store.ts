@@ -97,7 +97,7 @@ export class SignalProtocolStore implements StorageType {
       throw new Error("Expected identityKey to be an ArrayBuffer");
     }
     var trusted = this.get('identityKey/' + identifier);
-    if (trusted == null) {
+    if (trusted === undefined) {
       return Promise.resolve(true);
     }
     return Promise.resolve(DataUtils.arrayBufferToBase64String(identityKey) === trusted);
@@ -219,13 +219,13 @@ export class NamespacedStore {
     return `${this.prefix}/${key}`;
   }
 
-  get(key: string, default_ = null) {
+  get(key: string) {
     const item = this.store.get(key);
     if(item) {
       const parsed = JSON.parse(item);
       return parsed;
     }
-    return default_;
+    return undefined; //This seemed to fix the session builder?!
   }
 
   set(key: string, value: any) {
