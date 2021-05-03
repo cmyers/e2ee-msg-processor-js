@@ -255,8 +255,8 @@ export class LocalStorageStore {
   }
 
   containsKey(key: string): boolean {
-    for (let i in this.localStorage) {
-      if (i.includes(key)) {
+    for (let i = 0; i < this.localStorage.length; i++) {
+      if (this.localStorage.key(i).includes(key)) {
         return true;
       }
     }

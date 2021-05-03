@@ -137,13 +137,14 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
     var bobSignedKeyId = KeyHelper.generateRegistrationId();
 
 
-    const hasSession = aliceStore.containsKey('alice_localhost/session');
+    const hasSession = aliceStore.containsKey('session');
     let aliceCounter = 0;
     let bobCounter = 0;
     var aliceSessionCipher: libsignal.SessionCipher;
     var bobSessionCipher: libsignal.SessionCipher;
 
     if (hasSession) {
+        console.log(chalk.cyan(`${ALICE_ADDRESS.getName()} has a session with ${BOB_ADDRESS.getName()}`));
         aliceSessionCipher = new SessionCipher(aliceStore, BOB_ADDRESS);
         bobSessionCipher = new SessionCipher(bobStore, ALICE_ADDRESS);
     } else {
