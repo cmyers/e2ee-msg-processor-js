@@ -15,8 +15,6 @@ const KEY_ALGO = {
 };
 
 interface EncryptedMessage {
-    key_base64: string
-    tag_base64: string,
     key_and_tag_base64: string,
     payload_base64: string,
     iv_base64: string
@@ -57,8 +55,6 @@ async function encryptMessage(plaintext: string): Promise<EncryptedMessage> {
         exported_key = await crypto.subtle.exportKey('raw', key);
 
     return {
-        key_base64: DataUtils.arrayBufferToBase64String(exported_key),
-        tag_base64: DataUtils.arrayBufferToBase64String(tag),
         key_and_tag_base64: DataUtils.arrayBufferToBase64String(DataUtils.appendArrayBuffer(exported_key, tag)),
         payload_base64: DataUtils.arrayBufferToBase64String(ciphertext),
         iv_base64: DataUtils.arrayBufferToBase64String(iv)
