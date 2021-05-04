@@ -25,7 +25,10 @@ interface EncryptedMessage {
 interface OmemoMessage {
     key_base64: string,
     iv_base64: string,
-    payload_base64: string
+    payload_base64: string,
+    jid: string,
+    rid: number,
+    keyExchange: boolean
 }
 
 async function encryptMessage(plaintext: string): Promise<EncryptedMessage> {
@@ -170,15 +173,22 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
         if (ciphertext.body) {
 
             const omemoMessage: OmemoMessage = {
+                rid: aliceSessionCipher.remoteAddress.deviceId,
+                jid: aliceSessionCipher.remoteAddress.getName(),
+                keyExchange: ciphertext.type === 3, // check for ciphertext.type to be 3 which includes the PREKEY_BUNDLE
                 iv_base64: encryptedMessage.iv_base64,
                 key_base64: DataUtils.encodeBase64(ciphertext.body),
                 payload_base64: encryptedMessage.payload_base64
             }
 
             console.log(chalk.red(`Bob receives: ${JSON.stringify(omemoMessage)}`));
-            // check for ciphertext.type to be 3 which includes the PREKEY_BUNDLE
+
+            if(omemoMessage.rid !== bobStore.get('registrationId') && omemoMessage.jid !== 'bob@localhost') {
+                throw new Error('Message not intended for bob@localhost!');
+            }
+            
             let msg: ArrayBuffer;
-            if (ciphertext.type === 3) {
+            if (omemoMessage.keyExchange) {
                 msg = await bobSessionCipher.decryptPreKeyWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
             } else {
                 msg = await bobSessionCipher.decryptWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
@@ -202,12 +212,20 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
             if (ciphertext.body) {
 
                 const omemoMessage: OmemoMessage = {
+                    rid: bobSessionCipher.remoteAddress.deviceId,
+                    jid: bobSessionCipher.remoteAddress.getName(),
+                    keyExchange: ciphertext.type === 3, // check for ciphertext.type to be 3 which includes the PREKEY_BUNDLE
                     iv_base64: encryptedMessage.iv_base64,
                     key_base64: DataUtils.encodeBase64(ciphertext.body),
                     payload_base64: encryptedMessage.payload_base64
                 }
 
                 console.log(chalk.red(`Alice receives: ${JSON.stringify(omemoMessage)}`));
+
+                if(omemoMessage.rid !== bobStore.get('registrationId') && omemoMessage.jid !== 'alice@localhost') {
+                    throw new Error('Message not intended for alice@localhost!');
+                }
+
                 const msg = await aliceSessionCipher.decryptWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
                 omemoMessage.key_base64 = DataUtils.arrayBufferToBase64String(msg);
                 console.log(chalk.red(`Alice decrypts inner msg: ${omemoMessage.key_base64}`));
