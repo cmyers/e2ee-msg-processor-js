@@ -23,6 +23,7 @@ interface EncryptedMessage {
 }
 
 interface OmemoMessage {
+    sid: number,
     key_base64: string,
     iv_base64: string,
     payload_base64: string,
@@ -162,6 +163,10 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
         bobSessionCipher = new libsignal.SessionCipher(bobStore, ALICE_ADDRESS);
     }
 
+    const aliceDeviceId = await aliceSessionCipher.storage.getLocalRegistrationId() as number;
+    const bobDeviceId = await bobSessionCipher.storage.getLocalRegistrationId() as number;
+
+
     setInterval(async () => {
         const toSend = `messageToBobFromAlice${aliceCounter++}`;
         const encryptedMessage = (await encryptMessage(toSend));
@@ -173,6 +178,7 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
         if (ciphertext.body) {
 
             const omemoMessage: OmemoMessage = {
+                sid: aliceDeviceId,
                 rid: aliceSessionCipher.remoteAddress.deviceId,
                 jid: aliceSessionCipher.remoteAddress.getName(),
                 keyExchange: ciphertext.type === 3, // check for ciphertext.type to be 3 which includes the PREKEY_BUNDLE
@@ -183,7 +189,7 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
 
             console.log(chalk.red(`Bob receives: ${JSON.stringify(omemoMessage)}`));
 
-            if(omemoMessage.rid !== bobStore.get('registrationId') && omemoMessage.jid !== 'bob@localhost') {
+            if(omemoMessage.rid !== bobDeviceId || omemoMessage.jid !== 'bob@localhost') {
                 throw new Error('Message not intended for bob@localhost!');
             }
             
@@ -212,6 +218,7 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
             if (ciphertext.body) {
 
                 const omemoMessage: OmemoMessage = {
+                    sid: bobDeviceId,
                     rid: bobSessionCipher.remoteAddress.deviceId,
                     jid: bobSessionCipher.remoteAddress.getName(),
                     keyExchange: ciphertext.type === 3, // check for ciphertext.type to be 3 which includes the PREKEY_BUNDLE
@@ -222,7 +229,7 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
 
                 console.log(chalk.red(`Alice receives: ${JSON.stringify(omemoMessage)}`));
 
-                if(omemoMessage.rid !== bobStore.get('registrationId') && omemoMessage.jid !== 'alice@localhost') {
+                if(omemoMessage.rid !== aliceDeviceId || omemoMessage.jid !== 'alice@localhost') {
                     throw new Error('Message not intended for alice@localhost!');
                 }
 
