@@ -1,5 +1,5 @@
 import * as libsignal from '@privacyresearch/libsignal-protocol-typescript'
-import { DeviceType, KeyPairType } from '@privacyresearch/libsignal-protocol-typescript';
+import { DeviceType, KeyPairType, SessionCipher } from '@privacyresearch/libsignal-protocol-typescript';
 import { DataUtils, SignalProtocolStore, } from './store/store';
 import chalk from 'chalk';
 import { Crypto } from "@peculiar/webcrypto";
@@ -15,17 +15,19 @@ const KEY_ALGO = {
 };
 
 interface EncryptedMessage {
-    key_base64: string
-    tag_base64: string,
     key_and_tag_base64: string,
     payload_base64: string,
     iv_base64: string
 }
 
 interface OmemoMessage {
+    sid: number,
     key_base64: string,
     iv_base64: string,
-    payload_base64: string
+    payload_base64: string,
+    jid: string,
+    rid: number,
+    keyExchange: boolean
 }
 
 async function encryptMessage(plaintext: string): Promise<EncryptedMessage> {
@@ -53,8 +55,6 @@ async function encryptMessage(plaintext: string): Promise<EncryptedMessage> {
         exported_key = await crypto.subtle.exportKey('raw', key);
 
     return {
-        key_base64: DataUtils.arrayBufferToBase64String(exported_key),
-        tag_base64: DataUtils.arrayBufferToBase64String(tag),
         key_and_tag_base64: DataUtils.arrayBufferToBase64String(DataUtils.appendArrayBuffer(exported_key, tag)),
         payload_base64: DataUtils.arrayBufferToBase64String(ciphertext),
         iv_base64: DataUtils.arrayBufferToBase64String(iv)
@@ -75,139 +75,170 @@ async function decryptMessage(obj: OmemoMessage): Promise<string> {
     return DataUtils.arrayBufferToString(await crypto.subtle.decrypt(algo, key_obj, cipher));
 }
 
-function generateIdentity(store: SignalProtocolStore) {
-    return Promise.all([
-        KeyHelper.generateIdentityKeyPair(),
-        KeyHelper.generateRegistrationId(),
-    ]).then(function (result) {
-        store.storeIdentityKeyPair(result[0]);
-        store.storeLocalRegistrationId(result[1]);
-    });
-}
-
-function generatePreKeyBundle(store: SignalProtocolStore, preKeyId: number, signedPreKeyId: number) {
-    return Promise.all([
-        store.getIdentityKeyPair(),
-        store.getLocalRegistrationId()
-    ]).then(function (result) {
-        const identity = result[0] as KeyPairType<ArrayBuffer>;
-        var registrationId = result[1];
-
+(async () => {
+    function generateIdentity(store: SignalProtocolStore) {
         return Promise.all([
-            KeyHelper.generatePreKey(preKeyId),
-            KeyHelper.generateSignedPreKey(identity, signedPreKeyId),
-        ]).then(function (keys) {
-            var preKey = keys[0]
-            var signedPreKey = keys[1];
-
-            store.storePreKey(preKeyId, preKey.keyPair);
-            store.storeSignedPreKey(signedPreKeyId, signedPreKey.keyPair);
-
-            return {
-                identityKey: identity.pubKey,
-                registrationId: registrationId,
-                preKey: {
-                    keyId: preKeyId,
-                    publicKey: preKey.keyPair.pubKey
-                },
-                signedPreKey: {
-                    keyId: signedPreKeyId,
-                    publicKey: signedPreKey.keyPair.pubKey,
-                    signature: signedPreKey.signature
-                }
-            };
+            KeyHelper.generateIdentityKeyPair(),
+            KeyHelper.generateRegistrationId(),
+        ]).then(function (result) {
+            store.storeIdentityKeyPair(result[0]);
+            store.storeLocalRegistrationId(result[1]);
         });
-    });
-}
+    }
 
-// TODO study the encryption and decryption that converse.js does
-// https://github.com/conversejs/converse.js/blob/a4b90e3ab214647c44d048f9a54ee609e40206b5/src/plugins/omemo/utils.js#L17
+    function generatePreKeyBundle(store: SignalProtocolStore, preKeyId: number, signedPreKeyId: number) {
+        return Promise.all([
+            store.getIdentityKeyPair(),
+            store.getLocalRegistrationId()
+        ]).then(function (result) {
+            const identity = result[0] as KeyPairType<ArrayBuffer>;
+            var registrationId = result[1];
 
-// Does it relate to the current spec? https://xmpp.org/extensions/xep-0384.html
+            return Promise.all([
+                KeyHelper.generatePreKey(preKeyId),
+                KeyHelper.generateSignedPreKey(identity, signedPreKeyId),
+            ]).then(function (keys) {
+                var preKey = keys[0]
+                var signedPreKey = keys[1];
 
-var ALICE_ADDRESS = new libsignal.SignalProtocolAddress("alice@localhost", KeyHelper.generateRegistrationId());
-var BOB_ADDRESS = new libsignal.SignalProtocolAddress("bob@localhost", KeyHelper.generateRegistrationId());
+                store.storePreKey(preKeyId, preKey.keyPair);
+                store.storeSignedPreKey(signedPreKeyId, signedPreKey.keyPair);
 
-var aliceStore = new SignalProtocolStore();
-var bobStore = new SignalProtocolStore();
+                return {
+                    identityKey: identity.pubKey,
+                    registrationId: registrationId,
+                    preKey: {
+                        keyId: preKeyId,
+                        publicKey: preKey.keyPair.pubKey
+                    },
+                    signedPreKey: {
+                        keyId: signedPreKeyId,
+                        publicKey: signedPreKey.keyPair.pubKey,
+                        signature: signedPreKey.signature
+                    }
+                };
+            });
+        });
+    }
 
-var bobPreKeyId = KeyHelper.generateRegistrationId();
-var bobSignedKeyId = KeyHelper.generateRegistrationId();
+    const aliceStore = new SignalProtocolStore("alice_localhost");
+    const bobStore = new SignalProtocolStore("bob_localhost");
 
-Promise.all([
-    generateIdentity(aliceStore),
-    generateIdentity(bobStore),
-]).then(function () {
-    return generatePreKeyBundle(bobStore, bobPreKeyId, bobSignedKeyId);
-}).then(function (preKeyBundle) {
-    //go get Bob#s prekey bundle
-    var builder = new libsignal.SessionBuilder(aliceStore, BOB_ADDRESS);
+    const hasSession = aliceStore.containsKey('session') && bobStore.containsKey('session');
+
     let aliceCounter = 0;
     let bobCounter = 0;
-    var process = builder.processPreKey(preKeyBundle as DeviceType<ArrayBuffer>);
-    process.then(async () => {
-        var aliceSessionCipher = new libsignal.SessionCipher(aliceStore, BOB_ADDRESS);
-        var bobSessionCipher = new libsignal.SessionCipher(bobStore, ALICE_ADDRESS);
 
-        setInterval(async () => {
-            const toSend = `messageToBobFromAlice${aliceCounter++}`;
+    let aliceSessionCipher: libsignal.SessionCipher;
+    let bobSessionCipher: libsignal.SessionCipher;
+
+    if (hasSession) {
+        const ALICE_ADDRESS = new libsignal.SignalProtocolAddress("alice@localhost", aliceStore.get('registrationId'));
+        const BOB_ADDRESS = new libsignal.SignalProtocolAddress("bob@localhost", bobStore.get('registrationId'));
+
+        console.log(chalk.cyan(`${ALICE_ADDRESS.getName()} has a session with ${BOB_ADDRESS.getName()}`));
+
+        aliceSessionCipher = new SessionCipher(aliceStore, BOB_ADDRESS);
+        bobSessionCipher = new SessionCipher(bobStore, ALICE_ADDRESS);
+    } else {
+        const bobPreKeyId = KeyHelper.generateRegistrationId();
+        const bobSignedKeyId = KeyHelper.generateRegistrationId();
+
+        await generateIdentity(aliceStore);
+        await generateIdentity(bobStore);
+
+        const ALICE_ADDRESS = new libsignal.SignalProtocolAddress("alice@localhost", aliceStore.get('registrationId'));
+        const BOB_ADDRESS = new libsignal.SignalProtocolAddress("bob@localhost", bobStore.get('registrationId'));
+        
+        const preKeyBundle = await generatePreKeyBundle(bobStore, bobPreKeyId, bobSignedKeyId);
+
+        var builder = new libsignal.SessionBuilder(aliceStore, BOB_ADDRESS);
+        await builder.processPreKey(preKeyBundle as DeviceType<ArrayBuffer>);
+        
+        aliceSessionCipher = new libsignal.SessionCipher(aliceStore, BOB_ADDRESS);
+        bobSessionCipher = new libsignal.SessionCipher(bobStore, ALICE_ADDRESS);
+    }
+
+    const aliceDeviceId = await aliceSessionCipher.storage.getLocalRegistrationId() as number;
+    const bobDeviceId = await bobSessionCipher.storage.getLocalRegistrationId() as number;
+
+
+    setInterval(async () => {
+        const toSend = `messageToBobFromAlice${aliceCounter++}`;
+        const encryptedMessage = (await encryptMessage(toSend));
+
+        console.log(chalk.red(`Alice Encrypts: ${toSend}`));
+        let ciphertext = await aliceSessionCipher.encrypt(DataUtils.base64StringToArrayBuffer(encryptedMessage.key_and_tag_base64));
+        let plaintext = null;
+
+        if (ciphertext.body) {
+
+            const omemoMessage: OmemoMessage = {
+                sid: aliceDeviceId,
+                rid: aliceSessionCipher.remoteAddress.deviceId,
+                jid: aliceSessionCipher.remoteAddress.getName(),
+                keyExchange: ciphertext.type === 3, // check for ciphertext.type to be 3 which includes the PREKEY_BUNDLE
+                iv_base64: encryptedMessage.iv_base64,
+                key_base64: DataUtils.encodeBase64(ciphertext.body),
+                payload_base64: encryptedMessage.payload_base64
+            }
+
+            console.log(chalk.red(`Bob receives: ${JSON.stringify(omemoMessage)}`));
+
+            if(omemoMessage.rid !== bobDeviceId || omemoMessage.jid !== 'bob@localhost') {
+                throw new Error('Message not intended for bob@localhost!');
+            }
+            
+            let msg: ArrayBuffer;
+            if (omemoMessage.keyExchange) {
+                msg = await bobSessionCipher.decryptPreKeyWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
+            } else {
+                msg = await bobSessionCipher.decryptWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
+            }
+
+            omemoMessage.key_base64 = DataUtils.arrayBufferToBase64String(msg);
+            console.log(chalk.red(`Bob decrypts inner msg: ${omemoMessage.key_base64}`));
+
+            plaintext = await decryptMessage(omemoMessage);
+        }
+
+        if (plaintext !== null) {
+            console.log(chalk.green(`Bob Decrypts: ${plaintext}`));
+
+            const toSend = `messageToAliceFromBob${bobCounter++}`;
             const encryptedMessage = (await encryptMessage(toSend));
+            console.log(chalk.red(`Bob Encrypts: ${toSend}`));
 
-            console.log(chalk.red(`Alice Encrypts: ${toSend}`));
-            aliceSessionCipher.encrypt(DataUtils.base64StringToArrayBuffer(encryptedMessage.key_and_tag_base64)).then(async function (ciphertext) {
-                if (ciphertext.body) {
+            ciphertext = await bobSessionCipher.encrypt(DataUtils.base64StringToArrayBuffer(encryptedMessage.key_and_tag_base64));
+            plaintext = null;
+            if (ciphertext.body) {
 
-                    const omemoMessage: OmemoMessage = {
-                        iv_base64: encryptedMessage.iv_base64,
-                        key_base64: DataUtils.encodeBase64(ciphertext.body),
-                        payload_base64: encryptedMessage.payload_base64
-                    }
-
-                    console.log(chalk.red(`Bob receives: ${JSON.stringify(omemoMessage)}`));
-                    // check for ciphertext.type to be 3 which includes the PREKEY_BUNDLE
-                    let msg: ArrayBuffer;
-                    if (ciphertext.type === 3) {
-                        msg = await bobSessionCipher.decryptPreKeyWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
-                    } else {
-                        msg = await bobSessionCipher.decryptWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
-                    }
-
-                    omemoMessage.key_base64 = DataUtils.arrayBufferToBase64String(msg);
-                    console.log(chalk.red(`Bob decrypts inner msg: ${omemoMessage.key_base64}`));
-
-                    return await decryptMessage(omemoMessage);
+                const omemoMessage: OmemoMessage = {
+                    sid: bobDeviceId,
+                    rid: bobSessionCipher.remoteAddress.deviceId,
+                    jid: bobSessionCipher.remoteAddress.getName(),
+                    keyExchange: ciphertext.type === 3, // check for ciphertext.type to be 3 which includes the PREKEY_BUNDLE
+                    iv_base64: encryptedMessage.iv_base64,
+                    key_base64: DataUtils.encodeBase64(ciphertext.body),
+                    payload_base64: encryptedMessage.payload_base64
                 }
-                return null;
 
-            }).then(async function (plaintext) {
-                console.log(chalk.green(`Bob Decrypts: ${plaintext}`));
+                console.log(chalk.red(`Alice receives: ${JSON.stringify(omemoMessage)}`));
 
-                const toSend = `messageToAliceFromBob${bobCounter++}`;
-                const encryptedMessage = (await encryptMessage(toSend));
-                console.log(chalk.red(`Bob Encrypts: ${toSend}`));
+                if(omemoMessage.rid !== aliceDeviceId || omemoMessage.jid !== 'alice@localhost') {
+                    throw new Error('Message not intended for alice@localhost!');
+                }
 
-                bobSessionCipher.encrypt(DataUtils.base64StringToArrayBuffer(encryptedMessage.key_and_tag_base64)).then(async function (ciphertext) {
-                    if (ciphertext.body) {
+                const msg = await aliceSessionCipher.decryptWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
+                omemoMessage.key_base64 = DataUtils.arrayBufferToBase64String(msg);
+                console.log(chalk.red(`Alice decrypts inner msg: ${omemoMessage.key_base64}`));
 
-                        const omemoMessage: OmemoMessage = {
-                            iv_base64: encryptedMessage.iv_base64,
-                            key_base64: DataUtils.encodeBase64(ciphertext.body),
-                            payload_base64: encryptedMessage.payload_base64
-                        }
+                plaintext = await decryptMessage(omemoMessage);
+            }
 
-                        console.log(chalk.red(`Alice receives: ${JSON.stringify(omemoMessage)}`));
-                        const msg = await aliceSessionCipher.decryptWhisperMessage(DataUtils.base64StringToArrayBuffer(omemoMessage.key_base64), 'binary');
-                        omemoMessage.key_base64 = DataUtils.arrayBufferToBase64String(msg);
-                        console.log(chalk.red(`Alice decrypts inner msg: ${omemoMessage.key_base64}`));
-
-                        return await decryptMessage(omemoMessage);
-                    }
-                    return null;
-
-                }).then(function (plaintext) {
-                    console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
-                });
-            });
-        }, 2000);
-    });
-});
+            if (plaintext !== null) {
+                console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
+            }
+        }
+    }, 2000);
+})();
