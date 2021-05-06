@@ -1,9 +1,8 @@
 import * as libsignal from '@privacyresearch/libsignal-protocol-typescript'
 import { DeviceType, SessionCipher } from '@privacyresearch/libsignal-protocol-typescript';
-import { SignalProtocolStore, } from './store/store';
+import { SignalProtocolStore } from './store/store';
 import chalk from 'chalk';
 import { decryptMessage, encryptMessage, generateIdentity, generatePreKeyBundle } from './omemo';
-
 
 (async () => {
     const aliceStore = new SignalProtocolStore("alice_localhost");
@@ -43,7 +42,6 @@ import { decryptMessage, encryptMessage, generateIdentity, generatePreKeyBundle 
 
     const aliceDeviceId = await aliceSessionCipher.storage.getLocalRegistrationId() as number;
     const bobDeviceId = await bobSessionCipher.storage.getLocalRegistrationId() as number;
-
 
     setInterval(async () => {
         const toSend = `messageToBobFromAlice${aliceCounter++}`;
