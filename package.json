@@ -20,7 +20,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "minify": "uglifyjs --compress --mangle --output ./dist/index.min.js -- ./dist/index.js",
     "lint": "eslint . --ext .ts",
-    "start": "node .\\dist\\index.js"
+    "start": "node .\\dist\\example.js"
   },
   "author": "Chris Myers",
   "license": "MIT",

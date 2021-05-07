@@ -2,7 +2,7 @@ import * as libsignal from '@privacyresearch/libsignal-protocol-typescript'
 import { DeviceType, SessionCipher } from '@privacyresearch/libsignal-protocol-typescript';
 import { SignalProtocolStore } from './store/store';
 import chalk from 'chalk';
-import { decryptMessage, encryptMessage, generateIdentity, generatePreKeyBundle } from './omemo';
+import { Omemo } from './omemo';
 
 (async () => {
     const aliceStore = new SignalProtocolStore("alice_localhost");
@@ -25,13 +25,13 @@ import { decryptMessage, encryptMessage, generateIdentity, generatePreKeyBundle 
         aliceSessionCipher = new SessionCipher(aliceStore, BOB_ADDRESS);
         bobSessionCipher = new SessionCipher(bobStore, ALICE_ADDRESS);
     } else {
-        await generateIdentity(aliceStore);
-        await generateIdentity(bobStore);
+        await  Omemo.generateIdentity(aliceStore);
+        await  Omemo.generateIdentity(bobStore);
 
         const ALICE_ADDRESS = new libsignal.SignalProtocolAddress("alice@localhost", aliceStore.get('registrationId'));
         const BOB_ADDRESS = new libsignal.SignalProtocolAddress("bob@localhost", bobStore.get('registrationId'));
 
-        const preKeyBundle = await generatePreKeyBundle(bobStore);
+        const preKeyBundle = await  Omemo.generatePreKeyBundle(bobStore);
 
         var builder = new libsignal.SessionBuilder(aliceStore, BOB_ADDRESS);
         await builder.processPreKey(preKeyBundle as DeviceType<ArrayBuffer>);
@@ -45,7 +45,7 @@ import { decryptMessage, encryptMessage, generateIdentity, generatePreKeyBundle 
 
     setInterval(async () => {
         const toSend = `messageToBobFromAlice${aliceCounter++}`;
-        const encryptedMessage = await encryptMessage(aliceSessionCipher, toSend);
+        const encryptedMessage = await  Omemo.encryptMessage(aliceSessionCipher, toSend);
 
         console.log(chalk.red(`Alice Encrypts: ${toSend}`));
         let plaintext = null;
@@ -56,13 +56,13 @@ import { decryptMessage, encryptMessage, generateIdentity, generatePreKeyBundle 
             throw new Error('Message not intended for bob@localhost!');
         }
 
-        plaintext = await decryptMessage(bobSessionCipher, encryptedMessage);
+        plaintext = await  Omemo.decryptMessage(bobSessionCipher, encryptedMessage);
 
         if (plaintext !== null) {
             console.log(chalk.green(`Bob Decrypts: ${plaintext}`));
 
             const toSend = `messageToAliceFromBob${bobCounter++}`;
-            const encryptedMessage = await encryptMessage(bobSessionCipher, toSend);
+            const encryptedMessage = await  Omemo.encryptMessage(bobSessionCipher, toSend);
             console.log(chalk.red(`Bob Encrypts: ${toSend}`));
 
             plaintext = null;
@@ -73,7 +73,7 @@ import { decryptMessage, encryptMessage, generateIdentity, generatePreKeyBundle 
                 throw new Error('Message not intended for alice@localhost!');
             }
 
-            plaintext = await decryptMessage(aliceSessionCipher, encryptedMessage);
+            plaintext = await  Omemo.decryptMessage(aliceSessionCipher, encryptedMessage);
 
 
             if (plaintext !== null) {
