@@ -1,5 +1,5 @@
 {
-  "name": "libsignal-example-ts",
+  "name": "libsignal-omemo-ts",
   "version": "0.0.1",
   "description": "",
   "main": "./dist/index.min.js",
@@ -20,7 +20,7 @@
     "test": "echo \"Error: no test specified\" && exit 1",
     "minify": "uglifyjs --compress --mangle --output ./dist/index.min.js -- ./dist/index.js",
     "lint": "eslint . --ext .ts",
-    "start": "node .\\dist\\example.js"
+    "start": "node .\\dist\\olm-example.js"
   },
   "author": "Chris Myers",
   "license": "GPL-3.0",
@@ -42,6 +42,7 @@
     "@privacyresearch/libsignal-protocol-typescript": "^0.0.12",
     "@types/node-localstorage": "^1.3.0",
     "chalk": "^4.1.0",
-    "node-localstorage": "^2.1.6"
+    "node-localstorage": "^2.1.6",
+    "olm": "https://packages.matrix.org/npm/olm/olm-3.2.1.tgz"
   }
 }
