@@ -1,16 +1,15 @@
-var Olm = require('olm');
+import {Account, init as olmInit, Session} from 'olm';
 
 (async () => {
-    await Olm.init();
+    await olmInit();
 
-    var aliceAccount = new Olm.Account();
-    var bobAccount = new Olm.Account();
+    var aliceAccount = new Account();
+    var bobAccount = new Account();
     aliceAccount.create();
     bobAccount.create();
 
-    const aliceSession = new Olm.Session();
-    const bobSession = new Olm.Session();
-
+    const aliceSession = new Session();
+    const bobSession = new Session();
 
     bobAccount.generate_one_time_keys(1);
     var bobOneTimeKeys = JSON.parse(bobAccount.one_time_keys()).curve25519;
@@ -26,19 +25,19 @@ var Olm = require('olm');
 
     var TEST_TEXT='Hello Bob';
     var encrypted = aliceSession.encrypt(TEST_TEXT);
-    console.log(encrypted.body);
+    console.log((encrypted as any).body);
 
-    bobSession.create_inbound(bobAccount, encrypted.body);
+    bobSession.create_inbound(bobAccount, (encrypted as any).body);
     bobAccount.remove_one_time_keys(bobSession);
 
-    var decrypted = bobSession.decrypt(encrypted.type, encrypted.body);
+    var decrypted = bobSession.decrypt((encrypted as any).type, (encrypted as any).body);
 
     console.log(TEST_TEXT, "->", decrypted);
 
     TEST_TEXT='Hello Alice!';
     encrypted = bobSession.encrypt(TEST_TEXT);
-    console.log(encrypted.body);
-    decrypted = aliceSession.decrypt(encrypted.type, encrypted.body);
+    console.log((encrypted as any).body );
+    decrypted = aliceSession.decrypt((encrypted as any).type, (encrypted as any).body);
     console.log(TEST_TEXT, "->", decrypted);
 
 })();
