@@ -41,7 +41,7 @@ async function decryptMessage(encryptedMessage: EncryptedMessage, session:Sessio
     return DataUtils.arrayBufferToString(decryptedArrayBuffer);
 }
 
-async function encryptMessage(plaintext: string, session:Session, account:Account, r_identity_key: string, r_preKey: string): Promise<EncryptedMessage> {
+async function encryptMessage(plaintext: string, session: Session, account: Account, r_identity_key: string, r_preKey: string): Promise<EncryptedMessage> {
     const iv = crypto.getRandomValues(new Uint8Array(12)),
         key = await crypto.subtle.generateKey(KEY_ALGO, true, ['encrypt', 'decrypt']),
         algo = {
@@ -104,7 +104,6 @@ async function encryptMessage(plaintext: string, session:Session, account:Accoun
 
         //const pickled = aliceSession.pickle('test');
         //aliceSession.unpickle('test', pickled);
-
         
         let plaintext = null;
 
@@ -119,7 +118,6 @@ async function encryptMessage(plaintext: string, session:Session, account:Accoun
             console.log(chalk.green(`Bob Decrypts: ${plaintext}`));
 
             const toSend = `messageToAliceFromBob${bobCounter++}`;
-            
 
             aliceAccount.generate_one_time_keys(1);
             const aliceOneTimeKeys = JSON.parse(aliceAccount.one_time_keys()).curve25519;
@@ -131,10 +129,6 @@ async function encryptMessage(plaintext: string, session:Session, account:Accoun
             const otk_id = Object.keys(aliceOneTimeKeys)[0];
 
             console.log(chalk.blue(`Bob gets Alice's prekey: ${aliceOneTimeKeys[otk_id]}`));
-
-            bobSession.create_outbound(
-                bobAccount, aliceIdKey, aliceOneTimeKeys[otk_id]
-            );
 
             const encryptedMessage = await encryptMessage(toSend, bobSession, bobAccount, aliceIdKey,  aliceOneTimeKeys[otk_id]);
 
