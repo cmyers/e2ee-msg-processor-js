@@ -98,13 +98,16 @@ async function encryptMessage(plaintext: string): Promise<EncryptedMessage> {
             aliceAccount, bobIdKey, bobOneTimeKeys[otk_id]
         );
 
+        //const pickled = aliceSession.pickle('test');
+        //aliceSession.unpickle('test', pickled);
+
         var encrypted = aliceSession.encrypt(encryptedMessage.key_base64);
         encryptedMessage.key_base64 = (encrypted as any).body;
 
         console.log(chalk.red(`Alice Encrypts: ${toSend}`));
         let plaintext = null;
 
-        console.log(chalk.red(`Bob receives: ${JSON.stringify(encryptedMessage)}`));
+        console.log(chalk.rgb(255,191,0)(`Bob receives: ${JSON.stringify(encryptedMessage)}`));
 
         bobSession.create_inbound(bobAccount, (encrypted as any).body);
         bobAccount.remove_one_time_keys(bobSession);
@@ -137,7 +140,7 @@ async function encryptMessage(plaintext: string): Promise<EncryptedMessage> {
 
             console.log(chalk.red(`Bob Encrypts: ${toSend}`));
 
-            console.log(chalk.red(`Alice receives: ${JSON.stringify(encryptedMessage)}`));
+            console.log(chalk.rgb(255,191,0)(`Alice receives: ${JSON.stringify(encryptedMessage)}`));
 
             aliceSession.create_inbound(aliceAccount, (encrypted as any).body);
             aliceAccount.remove_one_time_keys(aliceSession);
