@@ -1,4 +1,4 @@
-import {Account, init as olmInit, Session} from 'olm';
+import { Account, init as olmInit, Session } from 'olm';
 import { Crypto } from "@peculiar/webcrypto";
 import { DataUtils } from './store/store';
 import chalk from 'chalk';
@@ -13,7 +13,7 @@ const KEY_ALGO = {
 };
 
 interface EncryptedMessage {
-    iv_base64:string,
+    iv_base64: string,
     key_base64: string,
     payload_base64: string
 }
@@ -33,7 +33,7 @@ async function decryptMessage(encryptedMessage: EncryptedMessage): Promise<strin
     };
 
     const decryptedArrayBuffer = await crypto.subtle.decrypt(algo, key_obj, cipher);
-    
+
     return DataUtils.arrayBufferToString(decryptedArrayBuffer);
 }
 
@@ -71,8 +71,8 @@ async function encryptMessage(plaintext: string): Promise<EncryptedMessage> {
 (async () => {
     await olmInit();
 
-    var aliceAccount = new Account();
-    var bobAccount = new Account();
+    const aliceAccount = new Account();
+    const bobAccount = new Account();
     aliceAccount.create();
     bobAccount.create();
 
@@ -80,19 +80,19 @@ async function encryptMessage(plaintext: string): Promise<EncryptedMessage> {
     let bobCounter = 0;
 
     const aliceSession = new Session();
-    const bobSession = new Session(); 
+    const bobSession = new Session();
 
     setInterval(async () => {
         const toSend = `messageToBobFromAlice${aliceCounter++}`;
         const encryptedMessage = await encryptMessage(toSend);
 
         bobAccount.generate_one_time_keys(1);
-        var bobOneTimeKeys = JSON.parse(bobAccount.one_time_keys()).curve25519;
+        const bobOneTimeKeys = JSON.parse(bobAccount.one_time_keys()).curve25519;
         bobAccount.mark_keys_as_published();
 
-        var bobIdKey = JSON.parse(bobAccount.identity_keys()).curve25519;
+        const bobIdKey = JSON.parse(bobAccount.identity_keys()).curve25519;
 
-        var otk_id = Object.keys(bobOneTimeKeys)[0];
+        const otk_id = Object.keys(bobOneTimeKeys)[0];
 
         aliceSession.create_outbound(
             aliceAccount, bobIdKey, bobOneTimeKeys[otk_id]
@@ -101,18 +101,18 @@ async function encryptMessage(plaintext: string): Promise<EncryptedMessage> {
         //const pickled = aliceSession.pickle('test');
         //aliceSession.unpickle('test', pickled);
 
-        var encrypted = aliceSession.encrypt(encryptedMessage.key_base64);
+        const encrypted = aliceSession.encrypt(encryptedMessage.key_base64);
         encryptedMessage.key_base64 = (encrypted as any).body;
 
         console.log(chalk.red(`Alice Encrypts: ${toSend}`));
         let plaintext = null;
 
-        console.log(chalk.rgb(255,191,0)(`Bob receives: ${JSON.stringify(encryptedMessage)}`));
+        console.log(chalk.rgb(255, 191, 0)(`Bob receives: ${JSON.stringify(encryptedMessage)}`));
 
         bobSession.create_inbound(bobAccount, (encrypted as any).body);
         bobAccount.remove_one_time_keys(bobSession);
 
-        var decrypted = bobSession.decrypt((encrypted as any).type, encryptedMessage.key_base64);
+        const decrypted = bobSession.decrypt((encrypted as any).type, encryptedMessage.key_base64);
         encryptedMessage.key_base64 = decrypted;
 
         plaintext = await decryptMessage(encryptedMessage);
@@ -124,28 +124,28 @@ async function encryptMessage(plaintext: string): Promise<EncryptedMessage> {
             const encryptedMessage = await encryptMessage(toSend);
 
             aliceAccount.generate_one_time_keys(1);
-            var aliceOneTimeKeys = JSON.parse(aliceAccount.one_time_keys()).curve25519;
+            const aliceOneTimeKeys = JSON.parse(aliceAccount.one_time_keys()).curve25519;
             aliceAccount.mark_keys_as_published();
 
-            var aliceIdKey = JSON.parse(aliceAccount.identity_keys()).curve25519;
+            const aliceIdKey = JSON.parse(aliceAccount.identity_keys()).curve25519;
 
-            var otk_id = Object.keys(aliceOneTimeKeys)[0];
+            const otk_id = Object.keys(aliceOneTimeKeys)[0];
 
             bobSession.create_outbound(
                 bobAccount, aliceIdKey, aliceOneTimeKeys[otk_id]
             );
 
-            var encrypted = bobSession.encrypt(encryptedMessage.key_base64);
+            const encrypted = bobSession.encrypt(encryptedMessage.key_base64);
             encryptedMessage.key_base64 = (encrypted as any).body;
 
             console.log(chalk.red(`Bob Encrypts: ${toSend}`));
 
-            console.log(chalk.rgb(255,191,0)(`Alice receives: ${JSON.stringify(encryptedMessage)}`));
+            console.log(chalk.rgb(255, 191, 0)(`Alice receives: ${JSON.stringify(encryptedMessage)}`));
 
             aliceSession.create_inbound(aliceAccount, (encrypted as any).body);
             aliceAccount.remove_one_time_keys(aliceSession);
 
-            var decrypted = aliceSession.decrypt((encrypted as any).type, encryptedMessage.key_base64);
+            const decrypted = aliceSession.decrypt((encrypted as any).type, encryptedMessage.key_base64);
             encryptedMessage.key_base64 = decrypted;
 
             plaintext = await decryptMessage(encryptedMessage);
@@ -157,6 +157,6 @@ async function encryptMessage(plaintext: string): Promise<EncryptedMessage> {
         }
     }, 2000);
 
-    
+
 
 })();
