@@ -1,5 +1,5 @@
 import * as libsignal from '@privacyresearch/libsignal-protocol-typescript'
-import { DeviceType, SessionCipher } from '@privacyresearch/libsignal-protocol-typescript';
+import { SessionCipher } from '@privacyresearch/libsignal-protocol-typescript';
 import { SignalProtocolStore } from './store/store';
 import chalk from 'chalk';
 import { Omemo } from './omemo';
@@ -34,7 +34,7 @@ import { Omemo } from './omemo';
         const preKeyBundle = await  Omemo.generatePreKeyBundle(bobStore);
 
         var builder = new libsignal.SessionBuilder(aliceStore, BOB_ADDRESS);
-        await builder.processPreKey(preKeyBundle as DeviceType<ArrayBuffer>);
+        await builder.processPreKey(preKeyBundle);
 
         aliceSessionCipher = new libsignal.SessionCipher(aliceStore, BOB_ADDRESS);
         bobSessionCipher = new libsignal.SessionCipher(bobStore, ALICE_ADDRESS);

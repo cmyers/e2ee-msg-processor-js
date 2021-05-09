@@ -1,5 +1,5 @@
 import * as libsignal from '@privacyresearch/libsignal-protocol-typescript'
-import { KeyPairType } from '@privacyresearch/libsignal-protocol-typescript';
+import { DeviceType, KeyPairType } from '@privacyresearch/libsignal-protocol-typescript';
 import { DataUtils, SignalProtocolStore, } from './store/store';
 import { Crypto } from "@peculiar/webcrypto";
 
@@ -26,7 +26,7 @@ export class Omemo {
         'length': 128
     };
 
-    static async generatePreKeyBundle(store: SignalProtocolStore) {
+    static async generatePreKeyBundle(store: SignalProtocolStore): Promise<DeviceType<ArrayBuffer>> {
 
         const preKeyId = KeyHelper.generateRegistrationId();
         const signedPreKeyId = KeyHelper.generateRegistrationId();
