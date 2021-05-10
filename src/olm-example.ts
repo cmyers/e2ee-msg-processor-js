@@ -15,6 +15,8 @@ const KEY_ALGO = {
 };
 
 interface EncryptedMessage {
+    rid: string,
+    sid: string,
     iv_base64: string,
     key_base64: string,
     payload_base64: string,
@@ -43,7 +45,7 @@ async function decryptMessage(encryptedMessage: EncryptedMessage, session:Sessio
     return DataUtils.arrayBufferToString(decryptedArrayBuffer);
 }
 
-async function encryptMessage(plaintext: string, session: Session): Promise<EncryptedMessage> {
+async function encryptMessage(plaintext: string, session: Session, rid: string, sid: string): Promise<EncryptedMessage> {
     const iv = crypto.getRandomValues(new Uint8Array(12)),
         key = await crypto.subtle.generateKey(KEY_ALGO, true, ['encrypt', 'decrypt']),
         algo = {
@@ -61,6 +63,8 @@ async function encryptMessage(plaintext: string, session: Session): Promise<Encr
         const encryptedKey = session.encrypt(key_tag);
 
     return {
+        rid,
+        sid,
         iv_base64: DataUtils.arrayBufferToBase64String(iv),
         key_base64: (encryptedKey as any).body,
         payload_base64: DataUtils.arrayBufferToBase64String(ciphertext),
@@ -74,10 +78,7 @@ async function encryptMessage(plaintext: string, session: Session): Promise<Encr
     const aliceStore: LocalStorageStore = new LocalStorageStore('alice_store');
     const bobStore: LocalStorageStore = new LocalStorageStore('bob_store');
 
-    const aliceAccount = new Account();
-    const bobAccount = new Account();
-    aliceAccount.create();
-    bobAccount.create();
+    
 
     let aliceCounter = 0;
     let bobCounter = 0;
@@ -86,22 +87,28 @@ async function encryptMessage(plaintext: string, session: Session): Promise<Encr
     const bobSession = new Session();
 
     const alicePickledSession = aliceStore.get('session');
-    const bobPickledSession = bobStore.get('session');
 
-    if(alicePickledSession && bobPickledSession) {
+    if(alicePickledSession) {
         console.log(chalk.blue(`Load Alice's session: ${alicePickledSession}`));
-        aliceSession.unpickle('session', alicePickledSession);
-        console.log(chalk.blue(`Load Bob's session: ${bobPickledSession}`));
-        bobSession.unpickle('session', bobPickledSession);
+        aliceSession.unpickle(aliceStore.get('bobIdKey') as string, alicePickledSession);
     } else {
-
         // Establish initial sesssion
+
+        const aliceAccount = new Account();
+        const bobAccount = new Account();
+        aliceAccount.create();
+        bobAccount.create();
 
         bobAccount.generate_one_time_keys(1);
         const bobOneTimeKeys = JSON.parse(bobAccount.one_time_keys()).curve25519;
         bobAccount.mark_keys_as_published();
 
+        const aliceIdKey = JSON.parse(aliceAccount.identity_keys()).curve25519;
         const bobIdKey = JSON.parse(bobAccount.identity_keys()).curve25519;
+        aliceStore.set('id', aliceIdKey);
+        bobStore.set('id', bobIdKey);
+        aliceStore.set('bobIdKey', bobIdKey);
+
         console.log(chalk.blue(`Alice gets Bob's Id key: ${bobIdKey}`));
 
         const otk_id = Object.keys(bobOneTimeKeys)[0];
@@ -121,30 +128,43 @@ async function encryptMessage(plaintext: string, session: Session): Promise<Encr
     
     setInterval(async () => {
         const toSend = `messageToBobFromAlice${aliceCounter++}`;
-        
-        console.log(chalk.red(`Alice Encrypts: ${toSend}`));
-        const encryptedMessage = await encryptMessage(toSend, aliceSession);
 
-        const pickled = aliceSession.pickle('session');
+        console.log(chalk.red(`Alice Encrypts: ${toSend}`));
+        const encryptedMessage = await encryptMessage(toSend, aliceSession, aliceStore.get('bobIdKey') as string, aliceStore.get('id') as string);
+
+        const pickled = aliceSession.pickle(aliceStore.get('bobIdKey') as string);
         aliceStore.set('session', pickled);
    
         let plaintext = null;
 
+        const bobPickledSession = bobStore.get('session');
+
+        if(bobPickledSession && !bobSession.has_received_message()) {
+            console.log(chalk.blue(`Load Bob's session: ${bobPickledSession}`));
+            bobSession.unpickle(bobStore.get('aliceIdKey') as string, bobPickledSession);
+        }
+
         console.log(chalk.rgb(255, 191, 0)(`Bob receives: ${JSON.stringify(encryptedMessage)}`));
         plaintext = await decryptMessage(encryptedMessage, bobSession);
+
+        bobStore.set('aliceIdKey', encryptedMessage.sid);
+        const bobPickled = bobSession.pickle(bobStore.get('aliceIdKey') as string);
+        bobStore.set('session', bobPickled);
 
         if (plaintext !== null) {
             console.log(chalk.green(`Bob Decrypts: ${plaintext}`));
             const toSend = `messageToAliceFromBob${bobCounter++}`;
 
-            const encryptedMessage = await encryptMessage(toSend, bobSession);
+            const bobEncryptedMessage = await encryptMessage(toSend, bobSession, bobStore.get('aliceIdKey') as string, bobStore.get('id') as string);
             console.log(chalk.red(`Bob Encrypts: ${toSend}`));
 
-            const pickled = bobSession.pickle('session');
+            const pickled = bobSession.pickle(bobStore.get('aliceIdKey') as string);
             bobStore.set('session', pickled);
 
-            console.log(chalk.rgb(255, 191, 0)(`Alice receives: ${JSON.stringify(encryptedMessage)}`));
-            plaintext = await decryptMessage(encryptedMessage, aliceSession);
+            console.log(chalk.rgb(255, 191, 0)(`Alice receives: ${JSON.stringify(bobEncryptedMessage)}`));
+            plaintext = await decryptMessage(bobEncryptedMessage, aliceSession);
+            const alicePickled = aliceSession.pickle(aliceStore.get('bobIdKey') as string);
+            aliceStore.set('session', alicePickled);
 
             if (plaintext !== null) {
                 console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
