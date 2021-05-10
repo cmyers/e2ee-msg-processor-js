@@ -1,6 +1,6 @@
 import { Account, init as olmInit, Session } from 'olm';
 import { Crypto } from "@peculiar/webcrypto";
-import { DataUtils } from './store/store';
+import { DataUtils, LocalStorageStore } from './store/store';
 import chalk from 'chalk';
 
 // TODO Read this about signing prekeys https://gitlab.matrix.org/matrix-org/olm/-/blob/master/docs/signing.md
@@ -71,6 +71,9 @@ async function encryptMessage(plaintext: string, session: Session): Promise<Encr
 (async () => {
     await olmInit();
 
+    const aliceStore: LocalStorageStore = new LocalStorageStore('alice_store');
+    const bobStore: LocalStorageStore = new LocalStorageStore('bob_store');
+
     const aliceAccount = new Account();
     const bobAccount = new Account();
     aliceAccount.create();
@@ -82,38 +85,49 @@ async function encryptMessage(plaintext: string, session: Session): Promise<Encr
     const aliceSession = new Session();
     const bobSession = new Session();
 
-    // Establish initial sesssion
+    const alicePickledSession = aliceStore.get('session');
+    const bobPickledSession = bobStore.get('session');
 
-    bobAccount.generate_one_time_keys(1);
-    const bobOneTimeKeys = JSON.parse(bobAccount.one_time_keys()).curve25519;
-    bobAccount.mark_keys_as_published();
+    if(alicePickledSession && bobPickledSession) {
+        console.log(chalk.blue(`Load Alice's session: ${alicePickledSession}`));
+        aliceSession.unpickle('session', alicePickledSession);
+        console.log(chalk.blue(`Load Bob's session: ${bobPickledSession}`));
+        bobSession.unpickle('session', bobPickledSession);
+    } else {
 
-    const bobIdKey = JSON.parse(bobAccount.identity_keys()).curve25519;
-    console.log(chalk.blue(`Alice gets Bob's Id key: ${bobIdKey}`));
+        // Establish initial sesssion
 
-    const otk_id = Object.keys(bobOneTimeKeys)[0];
+        bobAccount.generate_one_time_keys(1);
+        const bobOneTimeKeys = JSON.parse(bobAccount.one_time_keys()).curve25519;
+        bobAccount.mark_keys_as_published();
 
-    console.log(chalk.blue(`Alice gets Bob's prekey: ${bobOneTimeKeys[otk_id]}`));
+        const bobIdKey = JSON.parse(bobAccount.identity_keys()).curve25519;
+        console.log(chalk.blue(`Alice gets Bob's Id key: ${bobIdKey}`));
 
-    aliceSession.create_outbound(
-        aliceAccount, bobIdKey, bobOneTimeKeys[otk_id]
-    );
+        const otk_id = Object.keys(bobOneTimeKeys)[0];
 
-    const initialMessage = aliceSession.encrypt('');
+        console.log(chalk.blue(`Alice gets Bob's prekey: ${bobOneTimeKeys[otk_id]}`));
 
-    bobSession.create_inbound(bobAccount, (initialMessage as any).body);
-    bobAccount.remove_one_time_keys(bobSession);
-    bobSession.decrypt((initialMessage as any).type, (initialMessage as any).body);
+        aliceSession.create_outbound(
+            aliceAccount, bobIdKey, bobOneTimeKeys[otk_id]
+        );
+
+        const initialMessage = aliceSession.encrypt('');
+
+        bobSession.create_inbound(bobAccount, (initialMessage as any).body);
+        bobAccount.remove_one_time_keys(bobSession);
+        bobSession.decrypt((initialMessage as any).type, (initialMessage as any).body);
+    }
     
     setInterval(async () => {
         const toSend = `messageToBobFromAlice${aliceCounter++}`;
+        
         console.log(chalk.red(`Alice Encrypts: ${toSend}`));
-
         const encryptedMessage = await encryptMessage(toSend, aliceSession);
 
-        //const pickled = aliceSession.pickle('test');
-        //aliceSession.unpickle('test', pickled);
-        
+        const pickled = aliceSession.pickle('session');
+        aliceStore.set('session', pickled);
+   
         let plaintext = null;
 
         console.log(chalk.rgb(255, 191, 0)(`Bob receives: ${JSON.stringify(encryptedMessage)}`));
@@ -121,12 +135,13 @@ async function encryptMessage(plaintext: string, session: Session): Promise<Encr
 
         if (plaintext !== null) {
             console.log(chalk.green(`Bob Decrypts: ${plaintext}`));
-
             const toSend = `messageToAliceFromBob${bobCounter++}`;
 
             const encryptedMessage = await encryptMessage(toSend, bobSession);
-
             console.log(chalk.red(`Bob Encrypts: ${toSend}`));
+
+            const pickled = bobSession.pickle('session');
+            bobStore.set('session', pickled);
 
             console.log(chalk.rgb(255, 191, 0)(`Alice receives: ${JSON.stringify(encryptedMessage)}`));
             plaintext = await decryptMessage(encryptedMessage, aliceSession);
