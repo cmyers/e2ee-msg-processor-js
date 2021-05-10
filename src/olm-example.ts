@@ -78,19 +78,20 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
     const aliceStore: LocalStorageStore = new LocalStorageStore('alice_store');
     const bobStore: LocalStorageStore = new LocalStorageStore('bob_store');
 
-    
-
     let aliceCounter = 0;
     let bobCounter = 0;
 
     const aliceSession = new Session();
     const bobSession = new Session();
+    console.log(chalk.blue(`Alice's session id: ${aliceSession.session_id()}`));
+    console.log(chalk.blue(`Bob's session id: ${bobSession.session_id()}`));
 
     const alicePickledSession = aliceStore.get('session');
 
     if(alicePickledSession) {
         console.log(chalk.blue(`Load Alice's session: ${alicePickledSession}`));
         aliceSession.unpickle(aliceStore.get('bobIdKey') as string, alicePickledSession);
+        console.log(chalk.blue(`Alice's loaded session id: ${aliceSession.session_id()}`));
     } else {
         // Establish initial sesssion
 
@@ -142,6 +143,7 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
         if(bobPickledSession && !bobSession.has_received_message()) {
             console.log(chalk.blue(`Load Bob's session: ${bobPickledSession}`));
             bobSession.unpickle(bobStore.get('aliceIdKey') as string, bobPickledSession);
+            console.log(chalk.blue(`Bob's loaded session id: ${bobSession.session_id()}`));
         }
 
         console.log(chalk.rgb(255, 191, 0)(`Bob receives: ${JSON.stringify(encryptedMessage)}`));
@@ -171,7 +173,5 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
             }
         }
     }, 2000);
-
-
 
 })();
