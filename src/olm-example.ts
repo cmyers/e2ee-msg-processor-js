@@ -83,20 +83,22 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
 
     const aliceSession = new Session();
     const bobSession = new Session();
+    const aliceAccount = new Account();
+    const bobAccount = new Account();
+
     console.log(chalk.blue(`Alice's session id: ${aliceSession.session_id()}`));
     console.log(chalk.blue(`Bob's session id: ${bobSession.session_id()}`));
 
     const alicePickledSession = aliceStore.get('session');
+    const alicePickledAccount = aliceStore.get('account');
 
-    if(alicePickledSession) {
+    if(alicePickledSession && alicePickledAccount) {
         console.log(chalk.blue(`Load Alice's session: ${alicePickledSession}`));
         aliceSession.unpickle(aliceStore.get('bobIdKey') as string, alicePickledSession);
         console.log(chalk.blue(`Alice's loaded session id: ${aliceSession.session_id()}`));
+        aliceAccount.unpickle('account', alicePickledAccount);
     } else {
         // Establish initial sesssion
-
-        const aliceAccount = new Account();
-        const bobAccount = new Account();
         aliceAccount.create();
         bobAccount.create();
 
@@ -120,9 +122,13 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
             aliceAccount, bobIdKey, bobOneTimeKeys[otk_id]
         );
 
+        aliceStore.set('account', aliceAccount.pickle('account'));
+
         const initialMessage = aliceSession.encrypt('');
 
         bobSession.create_inbound(bobAccount, (initialMessage as any).body);
+        bobStore.set('account', bobAccount.pickle('account'));
+
         bobAccount.remove_one_time_keys(bobSession);
         bobSession.decrypt((initialMessage as any).type, (initialMessage as any).body);
     }
@@ -139,11 +145,13 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
         let plaintext = null;
 
         const bobPickledSession = bobStore.get('session');
+        const bobPickledAccount = bobStore.get('account');
 
-        if(bobPickledSession && !bobSession.has_received_message()) {
+        if(bobPickledSession && !bobSession.has_received_message() && bobPickledAccount) {
             console.log(chalk.blue(`Load Bob's session: ${bobPickledSession}`));
             bobSession.unpickle(bobStore.get('aliceIdKey') as string, bobPickledSession);
             console.log(chalk.blue(`Bob's loaded session id: ${bobSession.session_id()}`));
+            bobAccount.unpickle('account', bobPickledAccount);
         }
 
         console.log(chalk.rgb(255, 191, 0)(`Bob receives: ${JSON.stringify(encryptedMessage)}`));
