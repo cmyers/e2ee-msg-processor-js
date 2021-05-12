@@ -1,4 +1,4 @@
-import { Account, init as olmInit, Session } from 'olm';
+import { Account, init as olmInit, Session, Utility } from 'olm';
 import { Crypto } from "@peculiar/webcrypto";
 import { DataUtils, LocalStorageStore } from './store/store';
 import chalk from 'chalk';
@@ -114,25 +114,35 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
         const randomIds = crypto.getRandomValues(new Uint32Array(1));
         const signedPreKeyId = randomIds[0];
 
-        const prekey = await crypto.subtle.generateKey({ name: "EdDSA", namedCurve: "Ed25519" }, true, ["sign", "verify"]);
+        //const prekey = await crypto.subtle.generateKey({ name: "EdDSA", namedCurve: "Ed25519" }, true, ["sign", "verify"]);
+        //const preKeySig = await crypto.subtle.sign({ name: "EdDSA" }, prekey.privateKey, DataUtils.stringToArrayBuffer(bobIdKey));
+        //const exportedKey = await crypto.subtle.exportKey('jwk', prekey.publicKey);
 
-        const preKeySign = await crypto.subtle.sign({ name: "EdDSA" }, prekey.privateKey, DataUtils.stringToArrayBuffer(bobIdKey));
-
-        const exportedKey = await crypto.subtle.exportKey('jwk', prekey.publicKey);
+        const u = new Utility();
+        const signature = bobAccount.sign(bobIdKey);
 
         const bundle = {
             ik: bobIdKey,
-            spks: preKeySign,
+            spks: signature, //preKeySig
             spkId: signedPreKeyId,
-            spk: DataUtils.encodeBase64(JSON.stringify(exportedKey)),
+            spk: JSON.parse(bobAccount.identity_keys()).ed25519, //DataUtils.encodeBase64(JSON.stringify(exportedKey)),
             prekeys: Object.keys(bobOneTimeKeys)
         }
 
-        const key_obj = await crypto.subtle.importKey('jwk', JSON.parse(DataUtils.decodeBase64(bundle.spk)) as JsonWebKey, { name: "EdDSA", namedCurve: "Ed25519" }, true, ["sign", "verify"]);
+        //const key_obj = await crypto.subtle.importKey('jwk', JSON.parse(DataUtils.decodeBase64(bundle.spk)) as JsonWebKey, { name: "EdDSA", namedCurve: "Ed25519" }, true, ["sign", "verify"]);
+        //const verify = await crypto.subtle.verify({ name: "EdDSA" }, key_obj, bundle.spks, DataUtils.stringToArrayBuffer(bundle.ik));
 
-        const verify = await crypto.subtle.verify({ name: "EdDSA" }, key_obj, bundle.spks, DataUtils.stringToArrayBuffer(bundle.ik));
+        let verify = false;
+        try {
+            u.ed25519_verify(bundle.spk, bundle.ik, bundle.spks);
+            verify = true;
+        } catch(e) {
+            // handle an untrusted bundle
+        }
 
-        console.log(chalk.blue(`Alice verifies Bob's identity: ${verify}`));
+        u.free();
+
+        console.log(chalk.blue(`Alice verified Bob's identity`));
 
         const otk_id = bundle.prekeys[0];
 
