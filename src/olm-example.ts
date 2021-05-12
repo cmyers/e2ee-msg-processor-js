@@ -107,9 +107,6 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
         const bobIdKey = JSON.parse(bobAccount.identity_keys()).curve25519;
         aliceStore.set('id', aliceIdKey);
         bobStore.set('id', bobIdKey);
-        aliceStore.set('bobIdKey', bobIdKey);
-
-        console.log(chalk.blue(`Alice gets Bob's Id key: ${bobIdKey}`));
 
         const randomIds = crypto.getRandomValues(new Uint32Array(1));
         const signedPreKeyId = randomIds[0];
@@ -126,28 +123,35 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
             spks: signature, //preKeySig
             spkId: signedPreKeyId,
             spk: JSON.parse(bobAccount.identity_keys()).ed25519, //DataUtils.encodeBase64(JSON.stringify(exportedKey)),
-            prekeys: Object.keys(bobOneTimeKeys)
+            prekeys: Object.keys(bobOneTimeKeys).map(x => {
+                return {
+                    id: x,
+                    key: bobOneTimeKeys[x]
+                }
+            })
         }
 
         //const key_obj = await crypto.subtle.importKey('jwk', JSON.parse(DataUtils.decodeBase64(bundle.spk)) as JsonWebKey, { name: "EdDSA", namedCurve: "Ed25519" }, true, ["sign", "verify"]);
         //const verify = await crypto.subtle.verify({ name: "EdDSA" }, key_obj, bundle.spks, DataUtils.stringToArrayBuffer(bundle.ik));
 
+        console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's bundle: ${JSON.stringify(bundle)}`));
+
         try {
             u.ed25519_verify(bundle.spk, bobIdKey+bundle.ik, bundle.spks);
+            u.free();
         } catch(e) {
             // handle an untrusted bundle
         }
 
-        u.free();
-
         console.log(chalk.blue(`Alice verified Bob's identity`));
+        aliceStore.set('bobIdKey', bundle.ik);
 
         const otk_id = bundle.prekeys[0];
 
-        console.log(chalk.blue(`Alice gets Bob's prekey: ${bobOneTimeKeys[otk_id]}`));
+        console.log(chalk.blue(`Alice gets Bob's prekey: ${otk_id.key}`));
 
         aliceSession.create_outbound(
-            aliceAccount, bobIdKey, bobOneTimeKeys[otk_id]
+            aliceAccount, bobIdKey, otk_id.key
         );
 
         aliceStore.set('account', aliceAccount.pickle('account'));
