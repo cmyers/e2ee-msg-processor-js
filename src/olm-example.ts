@@ -119,7 +119,7 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
         //const exportedKey = await crypto.subtle.exportKey('jwk', prekey.publicKey);
 
         const u = new Utility();
-        const signature = bobAccount.sign(bobIdKey);
+        const signature = bobAccount.sign(signedPreKeyId+bobIdKey);
 
         const bundle = {
             ik: bobIdKey,
@@ -132,10 +132,8 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
         //const key_obj = await crypto.subtle.importKey('jwk', JSON.parse(DataUtils.decodeBase64(bundle.spk)) as JsonWebKey, { name: "EdDSA", namedCurve: "Ed25519" }, true, ["sign", "verify"]);
         //const verify = await crypto.subtle.verify({ name: "EdDSA" }, key_obj, bundle.spks, DataUtils.stringToArrayBuffer(bundle.ik));
 
-        let verify = false;
         try {
-            u.ed25519_verify(bundle.spk, bundle.ik, bundle.spks);
-            verify = true;
+            u.ed25519_verify(bundle.spk, bobIdKey+bundle.ik, bundle.spks);
         } catch(e) {
             // handle an untrusted bundle
         }
