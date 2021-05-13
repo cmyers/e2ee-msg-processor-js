@@ -123,9 +123,9 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
             spks: signature, //preKeySig
             spkId: signedPreKeyId,
             spk: JSON.parse(bobAccount.identity_keys()).ed25519, //DataUtils.encodeBase64(JSON.stringify(exportedKey)),
-            prekeys: Object.keys(bobOneTimeKeys).map(x => {
+            prekeys: Object.keys(bobOneTimeKeys).map((x, i) => {
                 return {
-                    id: x,
+                    id: i,
                     key: bobOneTimeKeys[x]
                 }
             })
