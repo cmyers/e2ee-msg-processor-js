@@ -23,6 +23,17 @@ interface EncryptedMessage {
     type: number
 }
 
+interface Bundle {
+    ik: string;
+    spks: string;
+    spkId: number;
+    spk: string;
+    prekeys: Array<{
+        id: number;
+        key: any;
+    }>;
+}
+
 async function decryptMessage(encryptedMessage: EncryptedMessage, session: Session): Promise<string> {
 
     const decryptedKey = session.decrypt(encryptedMessage.type, encryptedMessage.key_base64);
@@ -72,6 +83,33 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
     }
 }
 
+function getBundle(idKey: string, account: Account,): Bundle {
+    const randomIds = crypto.getRandomValues(new Uint32Array(1));
+    account.generate_one_time_keys(100);
+
+    const oneTimePreKeys = JSON.parse(account.one_time_keys()).curve25519;
+    const signedPreKeyId = randomIds[0];
+    const signature = account.sign(signedPreKeyId + idKey);
+
+    // TODO store signed prekeyid
+
+
+    account.mark_keys_as_published();
+
+    return {
+        ik: idKey,
+        spks: signature,
+        spkId: signedPreKeyId,
+        spk: JSON.parse(account.identity_keys()).ed25519,
+        prekeys: Object.keys(oneTimePreKeys).map((x, i) => {
+            return {
+                id: i,
+                key: oneTimePreKeys[x]
+            }
+        })
+    }
+}
+
 (async () => {
     await olmInit();
 
@@ -86,67 +124,42 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
     const aliceAccount = new Account();
     const bobAccount = new Account();
 
+    const alicePickledAccountId = aliceStore.get('pickledAccountId');
+    const alicePickledSessionId = aliceStore.get('pickledSessionId')
     const alicePickledSession = aliceStore.get('session');
     const alicePickledAccount = aliceStore.get('account');
 
-    if (alicePickledSession && alicePickledAccount) {
+    if (alicePickledSession && alicePickledAccount && alicePickledAccountId && alicePickledSessionId) {
         console.log(chalk.blue(`Load Alice's session: ${alicePickledSession}`));
-        aliceSession.unpickle(aliceStore.get('bobIdKey') as string, alicePickledSession);
+        aliceSession.unpickle(alicePickledSessionId as string, alicePickledSession);
         console.log(chalk.blue(`Alice's loaded session id: ${aliceSession.session_id()}`));
-        aliceAccount.unpickle('account', alicePickledAccount);
+        aliceAccount.unpickle(alicePickledAccountId as string, alicePickledAccount);
     } else {
         // Establish initial sesssion
         aliceAccount.create();
         bobAccount.create();
-
-        bobAccount.generate_one_time_keys(100);
-        const bobOneTimeKeys = JSON.parse(bobAccount.one_time_keys()).curve25519;
-        bobAccount.mark_keys_as_published();
 
         const aliceIdKey = JSON.parse(aliceAccount.identity_keys()).curve25519;
         const bobIdKey = JSON.parse(bobAccount.identity_keys()).curve25519;
         aliceStore.set('id', aliceIdKey);
         bobStore.set('id', bobIdKey);
 
-        const randomIds = crypto.getRandomValues(new Uint32Array(1));
-        const signedPreKeyId = randomIds[0];
-
-        //const prekey = await crypto.subtle.generateKey({ name: "EdDSA", namedCurve: "Ed25519" }, true, ["sign", "verify"]);
-        //const preKeySig = await crypto.subtle.sign({ name: "EdDSA" }, prekey.privateKey, DataUtils.stringToArrayBuffer(bobIdKey));
-        //const exportedKey = await crypto.subtle.exportKey('jwk', prekey.publicKey);
-
-        const u = new Utility();
-        const signature = bobAccount.sign(signedPreKeyId+bobIdKey);
-
-        const bundle = {
-            ik: bobIdKey,
-            spks: signature, //preKeySig
-            spkId: signedPreKeyId,
-            spk: JSON.parse(bobAccount.identity_keys()).ed25519, //DataUtils.encodeBase64(JSON.stringify(exportedKey)),
-            prekeys: Object.keys(bobOneTimeKeys).map((x, i) => {
-                return {
-                    id: i,
-                    key: bobOneTimeKeys[x]
-                }
-            })
-        }
-
-        //const key_obj = await crypto.subtle.importKey('jwk', JSON.parse(DataUtils.decodeBase64(bundle.spk)) as JsonWebKey, { name: "EdDSA", namedCurve: "Ed25519" }, true, ["sign", "verify"]);
-        //const verify = await crypto.subtle.verify({ name: "EdDSA" }, key_obj, bundle.spks, DataUtils.stringToArrayBuffer(bundle.ik));
-
-        console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's bundle: ${JSON.stringify(bundle)}`));
+        const bobsBundle = getBundle(bobIdKey, bobAccount);
+        console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's bundle: ${JSON.stringify(bobsBundle)}`));
 
         try {
-            u.ed25519_verify(bundle.spk, bobIdKey+bundle.ik, bundle.spks);
+            const u = new Utility();
+            u.ed25519_verify(bobsBundle.spk, bobIdKey + bobsBundle.ik, bobsBundle.spks);
             u.free();
-        } catch(e) {
+        } catch (e) {
             // handle an untrusted bundle
         }
 
         console.log(chalk.blue(`Alice verified Bob's identity`));
-        aliceStore.set('bobIdKey', bundle.ik);
+        // TODO implement isTrusted
+        aliceStore.set('identity/bob', bobsBundle.ik);
 
-        const otk_id = bundle.prekeys[0];
+        const otk_id = bobsBundle.prekeys[0];
 
         console.log(chalk.blue(`Alice gets Bob's prekey: ${otk_id.key}`));
 
@@ -154,58 +167,75 @@ async function encryptMessage(plaintext: string, session: Session, rid: string, 
             aliceAccount, bobIdKey, otk_id.key
         );
 
-        aliceStore.set('account', aliceAccount.pickle('account'));
-
+        let pickledAccountId = crypto.getRandomValues(new Uint32Array(1))[0].toString();   
+        aliceStore.set('account', aliceAccount.pickle(pickledAccountId));
+        aliceStore.set('pickledAccountId', pickledAccountId);
         const initialMessage = aliceSession.encrypt('');
 
+        let pickledSessionId = crypto.getRandomValues(new Uint32Array(1))[0].toString();
+        const alicePickledSession = aliceSession.pickle(pickledSessionId);
+        aliceStore.set('pickledSessionId', pickledSessionId);
+        aliceStore.set('session', alicePickledSession);
+
         bobSession.create_inbound(bobAccount, (initialMessage as any).body);
-        bobStore.set('account', bobAccount.pickle('account'));
+        pickledAccountId = crypto.getRandomValues(new Uint32Array(1))[0].toString();
+        bobStore.set('pickledAccountId', pickledAccountId);
+        bobStore.set('account', bobAccount.pickle(pickledAccountId));
 
         bobAccount.remove_one_time_keys(bobSession);
         bobSession.decrypt((initialMessage as any).type, (initialMessage as any).body);
+
+        pickledSessionId = crypto.getRandomValues(new Uint32Array(1))[0].toString();
+        const bobPickledSession = bobSession.pickle(pickledSessionId);
+        bobStore.set('pickledSessionId', pickledSessionId);
+        bobStore.set('session', bobPickledSession);
     }
 
     setInterval(async () => {
         const toSend = `messageToBobFromAlice${aliceCounter++}`;
 
         console.log(chalk.red(`Alice Encrypts: ${toSend}`));
-        const encryptedMessage = await encryptMessage(toSend, aliceSession, aliceStore.get('bobIdKey') as string, aliceStore.get('id') as string);
+        const encryptedMessage = await encryptMessage(toSend, aliceSession, aliceStore.get('identity/bob') as string, aliceStore.get('id') as string);
 
-        const pickled = aliceSession.pickle(aliceStore.get('bobIdKey') as string);
-        aliceStore.set('session', pickled);
+        const pickledSession = aliceSession.pickle( aliceStore.get('pickledSessionId') as string);
+        aliceStore.set('session', pickledSession);
 
         let plaintext = null;
 
-        const bobPickledSession = bobStore.get('session');
+        const bobPickledAccountId = bobStore.get('pickledAccountId');
+        const bobPickledSessionId = bobStore.get('pickledSessionId');
+        let bobPickledSession = bobStore.get('session');
         const bobPickledAccount = bobStore.get('account');
 
-        if (bobPickledSession && !bobSession.has_received_message() && bobPickledAccount) {
+        if (bobPickledSession && !bobSession.has_received_message() && bobPickledAccount && bobPickledAccountId && bobPickledSessionId) {
             console.log(chalk.blue(`Load Bob's session: ${bobPickledSession}`));
-            bobSession.unpickle(bobStore.get('aliceIdKey') as string, bobPickledSession);
+            bobSession.unpickle(bobPickledSessionId as string, bobPickledSession);
             console.log(chalk.blue(`Bob's loaded session id: ${bobSession.session_id()}`));
-            bobAccount.unpickle('account', bobPickledAccount);
+            bobAccount.unpickle(bobPickledAccountId as string, bobPickledAccount);
         }
 
         console.log(chalk.rgb(255, 191, 0)(`Bob receives: ${JSON.stringify(encryptedMessage)}`));
         plaintext = await decryptMessage(encryptedMessage, bobSession);
 
-        bobStore.set('aliceIdKey', encryptedMessage.sid);
-        const bobPickled = bobSession.pickle(bobStore.get('aliceIdKey') as string);
-        bobStore.set('session', bobPickled);
+        bobStore.set('identity/alice', encryptedMessage.sid);
+        bobPickledSession = bobSession.pickle(bobPickledSessionId as string);
+        bobStore.set('session', bobPickledSession);
 
         if (plaintext !== null) {
             console.log(chalk.green(`Bob Decrypts: ${plaintext}`));
             const toSend = `messageToAliceFromBob${bobCounter++}`;
 
-            const bobEncryptedMessage = await encryptMessage(toSend, bobSession, bobStore.get('aliceIdKey') as string, bobStore.get('id') as string);
+            const bobEncryptedMessage = await encryptMessage(toSend, bobSession, bobStore.get('identity/alice') as string, bobStore.get('id') as string);
             console.log(chalk.red(`Bob Encrypts: ${toSend}`));
 
-            const pickled = bobSession.pickle(bobStore.get('aliceIdKey') as string);
+            const pickled = bobSession.pickle(bobPickledSessionId as string);
             bobStore.set('session', pickled);
 
             console.log(chalk.rgb(255, 191, 0)(`Alice receives: ${JSON.stringify(bobEncryptedMessage)}`));
             plaintext = await decryptMessage(bobEncryptedMessage, aliceSession);
-            const alicePickled = aliceSession.pickle(aliceStore.get('bobIdKey') as string);
+            
+            const alicePickledSessionId = aliceStore.get('pickledSessionId');
+            const alicePickled = aliceSession.pickle(alicePickledSessionId as string);
             aliceStore.set('session', alicePickled);
 
             if (plaintext !== null) {
