@@ -91,9 +91,6 @@ function getBundle(idKey: string, account: Account,): Bundle {
     const signedPreKeyId = randomIds[0];
     const signature = account.sign(signedPreKeyId + idKey);
 
-    // TODO store signed prekeyid
-
-
     account.mark_keys_as_published();
 
     return {
@@ -149,10 +146,11 @@ function getBundle(idKey: string, account: Account,): Bundle {
 
         try {
             const u = new Utility();
-            u.ed25519_verify(bobsBundle.spk, bobIdKey + bobsBundle.ik, bobsBundle.spks);
+            u.ed25519_verify(bobsBundle.spk, bobsBundle.spkId + bobsBundle.ik, bobsBundle.spks);
             u.free();
         } catch (e) {
             // handle an untrusted bundle
+            throw e;
         }
 
         console.log(chalk.blue(`Alice verified Bob's identity`));
