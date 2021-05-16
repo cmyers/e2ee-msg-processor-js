@@ -83,7 +83,7 @@ async function initialiseSession(sjid: string, session: Session, account: Accoun
     }
 }
 
-async function processMessage(jid: string, sjid: string, session: Session, account: Account, store: LocalStorageStore, message: EncryptedMessage) {
+async function processMessage(sjid: string, session: Session, account: Account, store: LocalStorageStore, message: EncryptedMessage): Promise<string> {
     if (!session.has_received_message()) {
         // if we have never received messages by this point something has gone wrong
         // TODO handle this case before decryptiong? How? Ask sender for a new session key exchange? What is the protocol? See below.
@@ -92,9 +92,10 @@ async function processMessage(jid: string, sjid: string, session: Session, accou
         store.set('pickledAccountId', pickledAccountId);
         store.set('account', account.pickle(pickledAccountId));
 
-        await decryptMessage(sjid, message, session, store);
+        const plaintext = await decryptMessage(sjid, message, session, store);
 
         account.remove_one_time_keys(session);
+        return plaintext;
         // console.log(session.matches_inbound((message as any).body));
         //await session.decrypt((message as any).type, (message as any).body);
         
@@ -117,11 +118,7 @@ async function processMessage(jid: string, sjid: string, session: Session, accou
         // sender this way, the invalid session of the original
         // sender will get overwritten with this newly created,
         // valid session.
-        let plaintext = await decryptMessage(sjid, message, session, store);
-
-        if (plaintext !== null) {
-            console.log(chalk.green(`${jid} Decrypts: ${plaintext}`));
-        }
+        return await decryptMessage(sjid, message, session, store);
     }
 }
 
@@ -250,21 +247,21 @@ function getBundle(idKey: string, account: Account,): Bundle {
     const initialMessage = await initialiseSession('alice', aliceSession, aliceAccount, aliceStore, bobsBundle, 'bob');
 
     //bob receives key exchange
-    await processMessage('bob', 'alice', bobSession, bobAccount, bobStore, initialMessage as EncryptedMessage);
+    await processMessage('alice', bobSession, bobAccount, bobStore, initialMessage as EncryptedMessage);
 
     setInterval(async () => {
         const toSend = `messageToBobFromAlice${aliceCounter++}`;
 
-        console.log(chalk.red(`Alice Encrypts: ${toSend}`));
+        console.log(chalk.red(`alice Encrypts: ${toSend}`));
         const encryptedMessage = await encryptMessage(toSend, aliceSession, 'bob', aliceStore);
 
         let plaintext = null;
         //bob receives first proper message after key exchange
         console.log(chalk.rgb(255, 191, 0)(`bob receives from alice: ${JSON.stringify(encryptedMessage)}`));
-        plaintext = await processMessage('bob', 'alice', bobSession, bobAccount, bobStore, encryptedMessage);
+        plaintext = await processMessage('alice', bobSession, bobAccount, bobStore, encryptedMessage);
 
         if (plaintext !== null) {
-            console.log(chalk.green(`Bob Decrypts: ${plaintext}`));
+            console.log(chalk.green(`bob Decrypts: ${plaintext}`));
             // const toSend = `messageToAliceFromBob${bobCounter++}`;
 
             // const bobEncryptedMessage = await encryptMessage(toSend, bobSession, 'alice', bobStore.get('id') as string);
