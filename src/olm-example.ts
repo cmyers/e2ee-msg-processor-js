@@ -42,104 +42,6 @@ interface Bundle {
     }>;
 }
 
-async function encryptMessage(plaintext: string, session: Session, rjid: string, store: LocalStorageStore): Promise<EncryptedMessage> {
-    const rid = store.get(`${IDENTITY_PREFIX}${rjid}`) as string;
-    const sid = store.get(IDENTITY_KEY) as string;
-    const iv = crypto.getRandomValues(new Uint8Array(12)),
-        key = await crypto.subtle.generateKey(KEY_ALGO, true, ['encrypt', 'decrypt']),
-        algo = {
-            'name': 'AES-GCM',
-            'iv': iv,
-            'tagLength': TAG_LENGTH
-        },
-        encrypted = await crypto.subtle.encrypt(algo, key, DataUtils.stringToArrayBuffer(plaintext)),
-        length = encrypted.byteLength - ((128 + 7) >> 3),
-        ciphertext = encrypted.slice(0, length),
-        tag = encrypted.slice(length),
-        exported_key = await crypto.subtle.exportKey('raw', key),
-        key_tag = DataUtils.arrayBufferToBase64String(DataUtils.appendArrayBuffer(exported_key, tag));
-
-    const encryptedKey = session.encrypt(key_tag);
-
-    const pickledSessionId = store.get(PICKLED_SESSION_ID);
-    const pickledSession = session.pickle(pickledSessionId as string);
-    store.set(PICKLED_SESSION, pickledSession);
-
-    return {
-        rid,
-        sid,
-        iv_base64: DataUtils.arrayBufferToBase64String(iv),
-        key_base64: (encryptedKey as any).body,
-        payload_base64: DataUtils.arrayBufferToBase64String(ciphertext),
-        type: (encryptedKey as any).type
-    }
-}
-
-async function processMessage(sjid: string, session: Session, account: Account, store: LocalStorageStore, message: EncryptedMessage): Promise<string> {
-    if (!session.has_received_message() && message.type === 0) {
-        // if we have never received messages by this point something has gone wrong
-        // TODO handle this case before decryptiong? How? Ask sender for a new session key exchange? What is the protocol? See below.
-        session.create_inbound(account, message.key_base64);
-
-        const plaintext = await decryptMessage(sjid, message, session, store);
-
-        account.remove_one_time_keys(session);
-        return plaintext;
-        // console.log(session.matches_inbound((message as any).body));
-        //await session.decrypt((message as any).type, (message as any).body);
-
-        // console.log(session.matches_inbound((message as any).body));
-    } else {
-        // console.log(chalk.rgb(255, 191, 0)(`Bob receives: ${JSON.stringify(message)}`));
-
-        // TODO handle OLM.BAD_MESSAGE_MAC error through try and catch
-        // TODO from the XEP:
-        // There are various reasons why decryption of an
-        // OMEMOKeyExchange or an OMEMOAuthenticatedMessage
-        // could fail. One reason is if the message was
-        // received twice and already decrypted once, in this
-        // case the client MUST ignore the decryption failure
-        // and not show any warnings/errors. In all other cases
-        // of decryption failure, clients SHOULD respond by
-        // forcibly doing a new key exchange and sending a new
-        // OMEMOKeyExchange with a potentially empty SCE
-        // payload. By building a new session with the original
-        // sender this way, the invalid session of the original
-        // sender will get overwritten with this newly created,
-        // valid session.
-        return await decryptMessage(sjid, message, session, store);
-    }
-}
-
-
-
-async function decryptMessage(sjid: string, encryptedMessage: EncryptedMessage, session: Session, store: LocalStorageStore): Promise<string> {
-
-    const decryptedKey = session.decrypt(encryptedMessage.type, encryptedMessage.key_base64);
-
-    const pickledSessionId = store.get(PICKLED_SESSION_ID); // this is null on initialise
-    store.set(`${IDENTITY_PREFIX}${sjid}`, encryptedMessage.sid);
-    const pickledSession = session.pickle(pickledSessionId as string);
-    store.set(PICKLED_SESSION, pickledSession);
-
-    const key = DataUtils.base64StringToArrayBuffer(decryptedKey).slice(0, 16);
-    const tag = DataUtils.base64StringToArrayBuffer(decryptedKey).slice(16);
-
-    const key_obj = await crypto.subtle.importKey('raw', key, KEY_ALGO, true, ['encrypt', 'decrypt']);
-
-    const cipher = DataUtils.appendArrayBuffer(DataUtils.base64StringToArrayBuffer(encryptedMessage.payload_base64), tag);
-
-    const algo = {
-        'name': 'AES-GCM',
-        'iv': DataUtils.base64StringToArrayBuffer(encryptedMessage.iv_base64),
-        'tagLength': TAG_LENGTH
-    };
-
-    const decryptedArrayBuffer = await crypto.subtle.decrypt(algo, key_obj, cipher);
-
-    return DataUtils.arrayBufferToString(decryptedArrayBuffer);
-}
-
 function getBundle(idKey: string, account: Account,): Bundle {
     const randomIds = crypto.getRandomValues(new Uint32Array(1));
     account.generate_one_time_keys(100);
@@ -161,6 +63,110 @@ function getBundle(idKey: string, account: Account,): Bundle {
                 key: oneTimePreKeys[x]
             }
         })
+    }
+}
+
+class MessageManager {
+    private _sessionManager: SessionManager;
+
+    constructor(sessionManager: SessionManager) {
+        this._sessionManager = sessionManager;
+    }
+
+    async encryptMessage(plaintext: string, rjid: string): Promise<EncryptedMessage> {
+        const rid = this._sessionManager.Store.get(`${IDENTITY_PREFIX}${rjid}`) as string;
+        const sid = this._sessionManager.Store.get(IDENTITY_KEY) as string;
+        const iv = crypto.getRandomValues(new Uint8Array(12)),
+            key = await crypto.subtle.generateKey(KEY_ALGO, true, ['encrypt', 'decrypt']),
+            algo = {
+                'name': 'AES-GCM',
+                'iv': iv,
+                'tagLength': TAG_LENGTH
+            },
+            encrypted = await crypto.subtle.encrypt(algo, key, DataUtils.stringToArrayBuffer(plaintext)),
+            length = encrypted.byteLength - ((128 + 7) >> 3),
+            ciphertext = encrypted.slice(0, length),
+            tag = encrypted.slice(length),
+            exported_key = await crypto.subtle.exportKey('raw', key),
+            key_tag = DataUtils.arrayBufferToBase64String(DataUtils.appendArrayBuffer(exported_key, tag));
+    
+        const encryptedKey = this._sessionManager.Session.encrypt(key_tag);
+    
+        const pickledSessionId = this._sessionManager.Store.get(PICKLED_SESSION_ID);
+        const pickledSession = this._sessionManager.Session.pickle(pickledSessionId as string);
+        this._sessionManager.Store.set(PICKLED_SESSION, pickledSession);
+    
+        return {
+            rid,
+            sid,
+            iv_base64: DataUtils.arrayBufferToBase64String(iv),
+            key_base64: (encryptedKey as any).body,
+            payload_base64: DataUtils.arrayBufferToBase64String(ciphertext),
+            type: (encryptedKey as any).type
+        }
+    }
+
+    async decryptMessage(sjid: string, encryptedMessage: EncryptedMessage): Promise<string> {
+
+        const decryptedKey = this._sessionManager.Session.decrypt(encryptedMessage.type, encryptedMessage.key_base64);
+    
+        const pickledSessionId = this._sessionManager.Store.get(PICKLED_SESSION_ID); // this is null on initialise
+        this._sessionManager.Store.set(`${IDENTITY_PREFIX}${sjid}`, encryptedMessage.sid);
+        const pickledSession = this._sessionManager.Session.pickle(pickledSessionId as string);
+        this._sessionManager.Store.set(PICKLED_SESSION, pickledSession);
+    
+        const key = DataUtils.base64StringToArrayBuffer(decryptedKey).slice(0, 16);
+        const tag = DataUtils.base64StringToArrayBuffer(decryptedKey).slice(16);
+    
+        const key_obj = await crypto.subtle.importKey('raw', key, KEY_ALGO, true, ['encrypt', 'decrypt']);
+    
+        const cipher = DataUtils.appendArrayBuffer(DataUtils.base64StringToArrayBuffer(encryptedMessage.payload_base64), tag);
+    
+        const algo = {
+            'name': 'AES-GCM',
+            'iv': DataUtils.base64StringToArrayBuffer(encryptedMessage.iv_base64),
+            'tagLength': TAG_LENGTH
+        };
+    
+        const decryptedArrayBuffer = await crypto.subtle.decrypt(algo, key_obj, cipher);
+    
+        return DataUtils.arrayBufferToString(decryptedArrayBuffer);
+    }
+
+    async processMessage(sjid: string, message: EncryptedMessage): Promise<string> {
+        if (!this._sessionManager.Session.has_received_message() && message.type === 0) {
+            // if we have never received messages by this point something has gone wrong
+            // TODO handle this case before decryptiong? How? Ask sender for a new session key exchange? What is the protocol? See below.
+            this._sessionManager.Session.create_inbound(this._sessionManager.Account, message.key_base64);
+    
+            const plaintext = await this.decryptMessage(sjid, message);
+    
+            this._sessionManager.Account.remove_one_time_keys(this._sessionManager.Session);
+            return plaintext;
+            // console.log(session.matches_inbound((message as any).body));
+            //await session.decrypt((message as any).type, (message as any).body);
+    
+            // console.log(session.matches_inbound((message as any).body));
+        } else {
+            // console.log(chalk.rgb(255, 191, 0)(`Bob receives: ${JSON.stringify(message)}`));
+    
+            // TODO handle OLM.BAD_MESSAGE_MAC error through try and catch
+            // TODO from the XEP:
+            // There are various reasons why decryption of an
+            // OMEMOKeyExchange or an OMEMOAuthenticatedMessage
+            // could fail. One reason is if the message was
+            // received twice and already decrypted once, in this
+            // case the client MUST ignore the decryption failure
+            // and not show any warnings/errors. In all other cases
+            // of decryption failure, clients SHOULD respond by
+            // forcibly doing a new key exchange and sending a new
+            // OMEMOKeyExchange with a potentially empty SCE
+            // payload. By building a new session with the original
+            // sender this way, the invalid session of the original
+            // sender will get overwritten with this newly created,
+            // valid session.
+            return await this.decryptMessage(sjid, message);
+        }
     }
 }
 
@@ -237,7 +243,7 @@ class SessionManager {
         return this._store.get(`${IDENTITY_PREFIX}${jid}`) ? true : false;
     }
 
-    async initialiseSession(bundle: Bundle, rjid: string): Promise<EncryptedMessage | null> {
+    initialiseSession(bundle: Bundle, rjid: string): void {
         try {
             const u = new Utility();
             u.ed25519_verify(bundle.spk, bundle.spkId + bundle.ik, bundle.spks);
@@ -260,51 +266,55 @@ class SessionManager {
         );
 
         this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId as string));
-
-        return encryptMessage('', this._session, rjid, this._store);
     }
 }
 
 (async () => {
-    const alice = new SessionManager('alice');
-    await alice.initialise();
-    const bob = new SessionManager('bob');
-    await bob.initialise();
+    const aliceSessionManager = new SessionManager('alice');
+    await aliceSessionManager.initialise();
+
+    const aliceMsgManager = new MessageManager(aliceSessionManager);
+
+    const bobSessionManager = new SessionManager('bob');
+    await bobSessionManager.initialise();
+
+    const bobMsgManager = new MessageManager(bobSessionManager);
 
     let aliceCounter = 0;
     let bobCounter = 0;
     //session init
 
-    const bobsBundle = getBundle(bob.IdentityKey, bob.Account);
+    const bobsBundle = getBundle(bobSessionManager.IdentityKey, bobSessionManager.Account);
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's bundle: ${JSON.stringify(bobsBundle)}`));
 
 
-    if(!alice.HasSessionWith('bob')) {
-        const initialMessage = await alice.initialiseSession(bobsBundle, 'bob');
+    if(!aliceSessionManager.HasSessionWith('bob')) {
+        aliceSessionManager.initialiseSession(bobsBundle, 'bob');
+        const initialMessage = await aliceMsgManager.encryptMessage('', 'bob');
 
         //bob receives key exchange
-        await processMessage('alice', bob.Session, bob.Account, bob.Store, initialMessage as EncryptedMessage);
+        await bobMsgManager.processMessage('alice', initialMessage as EncryptedMessage);
     }
 
     setInterval(async () => {
         let toSend = `messageToBobFromAlice${aliceCounter++}`;
 
         console.log(chalk.red(`alice Encrypts: ${toSend}`));
-        let encryptedMessage = await encryptMessage(toSend, alice.Session, 'bob', alice.Store);
+        let encryptedMessage = await aliceMsgManager.encryptMessage(toSend, 'bob');
 
         let plaintext = null;
         //bob receives first proper message after key exchange
         console.log(chalk.rgb(255, 191, 0)(`bob receives from alice: ${JSON.stringify(encryptedMessage)}`));
-        plaintext = await processMessage('alice', bob.Session, bob.Account, bob.Store, encryptedMessage);
+        plaintext = await bobMsgManager.processMessage('alice', encryptedMessage);
 
         console.log(chalk.green(`bob Decrypts: ${plaintext}`));
         toSend = `messageToAliceFromBob${bobCounter++}`;
 
-        encryptedMessage = await encryptMessage(toSend, bob.Session, 'alice', bob.Store);
+        encryptedMessage = await bobMsgManager.encryptMessage(toSend, 'alice');
         console.log(chalk.red(`bob Encrypts: ${toSend}`));
 
         console.log(chalk.rgb(255, 191, 0)(`alice receives: ${JSON.stringify(encryptedMessage)}`));
-        plaintext = await processMessage('bob', alice.Session, alice.Account, alice.Store, encryptedMessage);
+        plaintext = await aliceMsgManager.processMessage('bob', encryptedMessage);
         console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
 
     }, 2000);
