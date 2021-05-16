@@ -84,7 +84,7 @@ async function initialiseSession(sjid: string, session: Session, account: Accoun
 }
 
 async function processMessage(sjid: string, session: Session, account: Account, store: LocalStorageStore, message: EncryptedMessage): Promise<string> {
-    if (!session.has_received_message()) {
+    if (!session.has_received_message() && message.type === 0) {
         // if we have never received messages by this point something has gone wrong
         // TODO handle this case before decryptiong? How? Ask sender for a new session key exchange? What is the protocol? See below.
         session.create_inbound(account, message.key_base64);
@@ -215,7 +215,7 @@ function getBundle(idKey: string, account: Account,): Bundle {
     const bobStore: LocalStorageStore = new LocalStorageStore('bob_store');
 
     let aliceCounter = 0;
-    //let bobCounter = 0;
+    let bobCounter = 0;
 
     const aliceSession = new Session();
     const bobSession = new Session();
@@ -250,37 +250,26 @@ function getBundle(idKey: string, account: Account,): Bundle {
     await processMessage('alice', bobSession, bobAccount, bobStore, initialMessage as EncryptedMessage);
 
     setInterval(async () => {
-        const toSend = `messageToBobFromAlice${aliceCounter++}`;
+        let toSend = `messageToBobFromAlice${aliceCounter++}`;
 
         console.log(chalk.red(`alice Encrypts: ${toSend}`));
-        const encryptedMessage = await encryptMessage(toSend, aliceSession, 'bob', aliceStore);
+        let encryptedMessage = await encryptMessage(toSend, aliceSession, 'bob', aliceStore);
 
         let plaintext = null;
         //bob receives first proper message after key exchange
         console.log(chalk.rgb(255, 191, 0)(`bob receives from alice: ${JSON.stringify(encryptedMessage)}`));
         plaintext = await processMessage('alice', bobSession, bobAccount, bobStore, encryptedMessage);
 
-        if (plaintext !== null) {
-            console.log(chalk.green(`bob Decrypts: ${plaintext}`));
-            // const toSend = `messageToAliceFromBob${bobCounter++}`;
+        console.log(chalk.green(`bob Decrypts: ${plaintext}`));
+        toSend = `messageToAliceFromBob${bobCounter++}`;
 
-            // const bobEncryptedMessage = await encryptMessage(toSend, bobSession, 'alice', bobStore.get('id') as string);
-            // console.log(chalk.red(`Bob Encrypts: ${toSend}`));
+        encryptedMessage = await encryptMessage(toSend, bobSession, 'alice', bobStore);
+        console.log(chalk.red(`bob Encrypts: ${toSend}`));
 
-            // const pickled = bobSession.pickle(bobPickledSessionId as string);
-            // bobStore.set('session', pickled);
-
-            // console.log(chalk.rgb(255, 191, 0)(`Alice receives: ${JSON.stringify(bobEncryptedMessage)}`));
-            // plaintext = await decryptMessage(bobEncryptedMessage, aliceSession);
-            
-            // const alicePickledSessionId = aliceStore.get('pickledSessionId');
-            // const alicePickled = aliceSession.pickle(alicePickledSessionId as string);
-            // aliceStore.set('session', alicePickled);
-
-            // if (plaintext !== null) {
-            //     console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
-            // }
-        }
+        console.log(chalk.rgb(255, 191, 0)(`alice receives: ${JSON.stringify(encryptedMessage)}`));
+        plaintext = await processMessage('bob', aliceSession, aliceAccount, aliceStore, encryptedMessage);
+        console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
+        
     }, 2000);
 
 })();
