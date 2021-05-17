@@ -102,6 +102,7 @@ class MessageManager {
             type: (encryptedKey as any).type
         }
     }
+
     private async decryptMessage(jid: string, encryptedMessage: EncryptedMessage): Promise<string> {
         const decryptedKey = this._sessionManager.decryptKey(encryptedMessage, jid);
         const key = DataUtils.base64StringToArrayBuffer(decryptedKey).slice(0, 16);
@@ -287,7 +288,10 @@ class SessionManager {
         // TODO implement isTrusted
         this._store.set(`${IDENTITY_PREFIX}${jid}`, bundle.ik);
 
-        const otk_id = bundle.prekeys[0]; //Grab a random key
+         //TODO Grab a random key
+         //TODO PreKey management
+         // - refill keys after one time use
+        const otk_id = bundle.prekeys[0];
 
         console.log(chalk.blue(`${this._jid} gets ${jid}'s prekey: ${otk_id.key}`));
 
