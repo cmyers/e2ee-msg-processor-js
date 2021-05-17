@@ -120,28 +120,20 @@ class MessageManager {
         return DataUtils.arrayBufferToString(decryptedArrayBuffer);
     }
 
+    // TODO handle decryption failure cases
+    // - copy of already decrypted message - ignore decryption failure
+    // - establish a new session with the sender (reverse session initialisation?)
     async processMessage(jid: string, message: EncryptedMessage): Promise<string> {
         let session = this._sessionManager.session(jid);
 
-        // check session manager for an existing session. If does not exist then create new inbound session
-
         if (!session && message.type === 0) {
 
-            session = await this._sessionManager.initialiseInboundSession(jid, message); // LAST CODE - create inbound session logic
-            // if we have never received messages by this point something has gone wrong - this might be a situation that happened before re-write but below is still relevant
-            // TODO handle this case before decryptiong? How? Ask sender for a new session key exchange? What is the protocol? See below.
-
+            session = await this._sessionManager.initialiseInboundSession(jid, message);
             const plaintext = await this.decryptMessage(jid, message);
 
             this._sessionManager.Account.remove_one_time_keys(session);
             return plaintext;
-            // console.log(session.matches_inbound((message as any).body));
-            //await session.decrypt((message as any).type, (message as any).body);
-
-            // console.log(session.matches_inbound((message as any).body));
         } else {
-            // console.log(chalk.rgb(255, 191, 0)(`Bob receives: ${JSON.stringify(message)}`));
-
             // TODO handle OLM.BAD_MESSAGE_MAC error through try and catch
             // TODO from the XEP:
             // There are various reasons why decryption of an
