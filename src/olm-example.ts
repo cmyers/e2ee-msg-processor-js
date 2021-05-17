@@ -123,6 +123,9 @@ class MessageManager {
     // TODO handle decryption failure cases
     // - copy of already decrypted message - ignore decryption failure
     // - establish a new session with the sender (reverse session initialisation?)
+    //TODO keep copy of last message sent in case of client decryption failure and session-re-establish attempt
+    //TODO Message Carbons - XMPP layer?
+    //TODO Message Archive - XMPP layer? 
     async processMessage(jid: string, message: EncryptedMessage): Promise<string> {
         let session = this._sessionManager.session(jid);
 
