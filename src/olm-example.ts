@@ -42,6 +42,7 @@ interface Bundle {
     }>;
 }
 
+// TODO move into SessionManager
 function getBundle(idKey: string, account: Account): Bundle {
     const randomIds = crypto.getRandomValues(new Uint32Array(1));
     account.generate_one_time_keys(100);
@@ -241,7 +242,7 @@ class SessionManager {
         const pickledSession = this._store.get(`${PICKLED_SESSION_PREFIX}${jid}`);
 
         if (pickledSession) {
-            console.log(chalk.blue(`Load ${this._jid}'s session: ${pickledSession}`));
+            console.log(chalk.blue(`Load ${this._jid}'s session with ${jid}: ${pickledSession}`));
             session.unpickle(pickledSessionKey as string, pickledSession);
             this._sessions.set(jid, session);
 
@@ -380,7 +381,7 @@ class SessionManager {
         plaintext = await aliceMsgManager.processMessage('bob', encryptedMessage);
         console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
 
-        toSend = `messageToCharlieFromAlice${charlieCounter++}`;
+        toSend = `messageToCharlieFromAlice${aliceCounter++}`;
 
         console.log(chalk.red(`alice Encrypts: ${toSend}`));
         encryptedMessage = await aliceMsgManager.encryptMessage('charlie', toSend);
@@ -389,6 +390,17 @@ class SessionManager {
         plaintext = await charlieMsgManager.processMessage('alice', encryptedMessage);
 
         console.log(chalk.green(`charlie Decrypts: ${plaintext}`));
+
+        if(aliceCounter%5 === 0) {
+            toSend = `messageToAliceFromCharlie${charlieCounter++}`;
+
+            encryptedMessage = await charlieMsgManager.encryptMessage('alice', toSend);
+            console.log(chalk.red(`charlie Encrypts: ${toSend}`));
+
+            console.log(chalk.rgb(255, 191, 0)(`alice receives from charlie: ${JSON.stringify(encryptedMessage)}`));
+            plaintext = await aliceMsgManager.processMessage('charlie', encryptedMessage);
+            console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
+        }
 
     }, 2000);
 
