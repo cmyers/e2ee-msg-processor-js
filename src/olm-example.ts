@@ -42,31 +42,6 @@ interface Bundle {
     }>;
 }
 
-// TODO move into SessionManager
-function getBundle(idKey: string, account: Account): Bundle {
-    const randomIds = crypto.getRandomValues(new Uint32Array(1));
-    account.generate_one_time_keys(100);
-
-    const oneTimePreKeys = JSON.parse(account.one_time_keys()).curve25519;
-    const signedPreKeyId = randomIds[0];
-    const signature = account.sign(signedPreKeyId + idKey);
-
-    account.mark_keys_as_published();
-
-    return {
-        ik: idKey,
-        spks: signature,
-        spkId: signedPreKeyId,
-        spk: JSON.parse(account.identity_keys()).ed25519,
-        prekeys: Object.keys(oneTimePreKeys).map((x, i) => {
-            return {
-                id: i,
-                key: oneTimePreKeys[x]
-            }
-        })
-    }
-}
-
 class MessageManager {
     private _sessionManager: SessionManager;
 
@@ -133,9 +108,12 @@ class MessageManager {
         if (!session && message.type === 0) {
 
             session = await this._sessionManager.initialiseInboundSession(jid, message);
-            const plaintext = await this.decryptMessage(jid, message);
 
-            this._sessionManager.Account.remove_one_time_keys(session);
+            if(!session.matches_inbound_from(message.sid, message.key_base64)) {
+                throw new Error('Message is not verfied!')
+            }
+
+            const plaintext = await this.decryptMessage(jid, message);
             return plaintext;
         } else {
             // TODO handle OLM.BAD_MESSAGE_MAC error through try and catch
@@ -163,9 +141,9 @@ class SessionManager {
     private _sessions: Map<string, Session> = new Map<string, Session>();
     private _account: Account;
     private _store: LocalStorageStore;
-    private _idKey: string | null = null;
+    private _idKey: string;
     private _jid: string;
-    private _pickledAccountId: string | null = null;
+    private _pickledAccountId: string;
     private _initialised: boolean = false;
 
     constructor(jid: string) {
@@ -173,7 +151,7 @@ class SessionManager {
         this._store = new LocalStorageStore(jid);
         this._account = new Account();
 
-        this._pickledAccountId = this._store.get(PICKLED_ACCOUNT_ID);
+        this._pickledAccountId = this._store.get(PICKLED_ACCOUNT_ID) as string;
 
         const pickledAccount = this._store.get(PICKLED_ACCOUNT);
 
@@ -189,6 +167,35 @@ class SessionManager {
 
         this._idKey = JSON.parse(this._account.identity_keys()).curve25519;
         this._store.set(IDENTITY_KEY, this._idKey);
+    }
+
+
+    // Handle regenerating used keys
+    generatePreKeyBundle(): Bundle {
+        const randomIds = crypto.getRandomValues(new Uint32Array(1));
+        const signedPreKeyId = randomIds[0];
+        this._account.generate_one_time_keys(5);
+        const oneTimePreKeys = JSON.parse(this._account.one_time_keys()).curve25519;  
+        const signature = this._account.sign(signedPreKeyId + this._idKey);
+
+        // TODO CLARIFY:
+        //should be called once published to the server
+        //this removes the ability to expose the keys so once is called we can't retrieve them, only add new keys and publish again
+        //this logic needs to be checked, as we might not want to publish another bundle, only replace used keys and publish
+        //this._account.mark_keys_as_published();
+
+        return {
+            ik: this._idKey,
+            spks: signature,
+            spkId: signedPreKeyId,
+            spk: JSON.parse(this._account.identity_keys()).ed25519,
+            prekeys: Object.keys(oneTimePreKeys).map((x, i) => {
+                return {
+                    id: i,
+                    key: oneTimePreKeys[x]
+                }
+            })
+        }
     }
 
     session(jid: string): Session | null {
@@ -248,14 +255,14 @@ class SessionManager {
     }
 
     private pickleSession(jid: string, session: Session) {
-        let pickledSessionSecret = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}`);
-        if(!pickledSessionSecret) {
+        let pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}`);
+        if(!pickledSessionKey) {
             const randValues = crypto.getRandomValues(new Uint32Array(1));
-            pickledSessionSecret = randValues[0].toString();
-            this._store.set(`${PICKLED_SESSION_KEY_PREFIX}${jid}`, pickledSessionSecret);
+            pickledSessionKey = randValues[0].toString();
+            this._store.set(`${PICKLED_SESSION_KEY_PREFIX}${jid}`, pickledSessionKey);
         }
 
-        this._store.set(`${PICKLED_SESSION_PREFIX}${jid}`, session.pickle(pickledSessionSecret));
+        this._store.set(`${PICKLED_SESSION_PREFIX}${jid}`, session.pickle(pickledSessionKey));
     }
 
     private createSession(jid: string): Session {
@@ -266,7 +273,12 @@ class SessionManager {
 
     async initialiseInboundSession(jid: string, keyExchangeMessage: EncryptedMessage): Promise<Session> {
         const session = this.createSession(jid);
+
         session.create_inbound(this._account, keyExchangeMessage.key_base64);
+
+        this._account.remove_one_time_keys(session);
+        this._account.generate_one_time_keys(1);
+        //this._account.mark_keys_as_published(); //see generatedPreKeyBundle
 
         this._sessions.set(jid, session);
         this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId as string));  
@@ -288,10 +300,9 @@ class SessionManager {
         // TODO implement isTrusted
         this._store.set(`${IDENTITY_PREFIX}${jid}`, bundle.ik);
 
-         //TODO Grab a random key
          //TODO PreKey management
          // - refill keys after one time use
-        const otk_id = bundle.prekeys[0];
+        const otk_id = bundle.prekeys[crypto.getRandomValues(new Uint32Array(1))[0] % 5];
 
         console.log(chalk.blue(`${this._jid} gets ${jid}'s prekey: ${otk_id.key}`));
 
@@ -332,7 +343,7 @@ class SessionManager {
 
     //session init
 
-    const bobsBundle = getBundle(bobSessionManager.IdentityKey, bobSessionManager.Account);
+    const bobsBundle = bobSessionManager.generatePreKeyBundle();
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's bundle: ${JSON.stringify(bobsBundle)}`));
 
 
@@ -341,10 +352,12 @@ class SessionManager {
         const initialMessage = await aliceMsgManager.encryptMessage('bob', '');
 
         //bob receives key exchange
+        console.log(JSON.parse(bobSessionManager.Account.one_time_keys()).curve25519);
         await bobMsgManager.processMessage('alice', initialMessage as EncryptedMessage);
+        console.log(JSON.parse(bobSessionManager.Account.one_time_keys()).curve25519);
     }
 
-    const charliesBundle = getBundle(charlieSessionManager.IdentityKey, charlieSessionManager.Account);
+    const charliesBundle = charlieSessionManager.generatePreKeyBundle();
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Charlie's bundle: ${JSON.stringify(charliesBundle)}`));
 
     if (!aliceSessionManager.session('charlie')) {
