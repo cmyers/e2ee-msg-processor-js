@@ -11,11 +11,13 @@ const TAG_LENGTH = 128;
 
 //storage constants
 const PICKLED_ACCOUNT_ID = 'pickledAccountId';
+const DEVICE_ID = 'deviceId';
 const PICKLED_SESSION_KEY_PREFIX = 'pickledSessionKey/';
 const PICKLED_SESSION_PREFIX = 'pickledSession/';
 const PICKLED_ACCOUNT = 'pickledAccount';
 const IDENTITY_PREFIX = 'identity/';
 const IDENTITY_KEY = 'identityKey';
+const PREKEYS = 100;
 
 const KEY_ALGO = {
     'name': 'AES-GCM',
@@ -23,8 +25,9 @@ const KEY_ALGO = {
 };
 
 interface EncryptedMessage {
-    rid: string,
-    sid: string,
+    jid: string,
+    rid: number,
+    sid: number,
     iv_base64: string,
     key_base64: string,
     payload_base64: string,
@@ -32,6 +35,7 @@ interface EncryptedMessage {
 }
 
 interface Bundle {
+    deviceId: number,
     ik: string;
     spks: string;
     spkId: number;
@@ -49,9 +53,9 @@ class MessageManager {
         this._sessionManager = sessionManager;
     }
 
-    async encryptMessage(jid: string, plaintext: string): Promise<EncryptedMessage> {
-        const rid = this._sessionManager.Store.get(`${IDENTITY_PREFIX}${jid}`) as string;
-        const sid = this._sessionManager.Store.get(IDENTITY_KEY) as string;
+    async encryptMessage(jid: string, rid: number, plaintext: string): Promise<EncryptedMessage> {
+        //TODO get all device ids for jid
+        const sid = parseInt(this._sessionManager.Store.get(DEVICE_ID) as string);
         const iv = crypto.getRandomValues(new Uint8Array(12)),
             key = await crypto.subtle.generateKey(KEY_ALGO, true, ['encrypt', 'decrypt']),
             algo = {
@@ -66,9 +70,10 @@ class MessageManager {
             exported_key = await crypto.subtle.exportKey('raw', key),
             key_tag = DataUtils.arrayBufferToBase64String(DataUtils.appendArrayBuffer(exported_key, tag));
 
-        const encryptedKey = this._sessionManager.encryptKey(key_tag, jid);
+        const encryptedKey = this._sessionManager.encryptKey(key_tag, jid, rid);
 
         return {
+            jid: this._sessionManager.JID,
             rid,
             sid,
             iv_base64: DataUtils.arrayBufferToBase64String(iv),
@@ -78,8 +83,8 @@ class MessageManager {
         }
     }
 
-    private async decryptMessage(jid: string, encryptedMessage: EncryptedMessage): Promise<string> {
-        const decryptedKey = this._sessionManager.decryptKey(encryptedMessage, jid);
+    private async decryptMessage(encryptedMessage: EncryptedMessage): Promise<string> {
+        const decryptedKey = this._sessionManager.decryptKey(encryptedMessage);
         const key = DataUtils.base64StringToArrayBuffer(decryptedKey).slice(0, 16);
         const tag = DataUtils.base64StringToArrayBuffer(decryptedKey).slice(16);
         const key_obj = await crypto.subtle.importKey('raw', key, KEY_ALGO, true, ['encrypt', 'decrypt']);
@@ -102,18 +107,20 @@ class MessageManager {
     //TODO keep copy of last message sent in case of client decryption failure and session-re-establish attempt
     //TODO Message Carbons - XMPP layer?
     //TODO Message Archive - XMPP layer? 
-    async processMessage(jid: string, message: EncryptedMessage): Promise<string> {
-        let session = this._sessionManager.session(jid);
+    async processMessage(message: EncryptedMessage): Promise<string> {
+        //TODO get session for each deviceid for this jid!
+        let session = this._sessionManager.session(message.jid, message.sid);
 
         if (!session && message.type === 0) {
+            //TODO Idkey should be pulled from bundle for each device easlier on and stored as such to retreive here
+            const idKey = this._sessionManager.Store.get(`${IDENTITY_PREFIX}${message.jid}/${message.sid}`);
+            session = await this._sessionManager.initialiseInboundSession(message.jid, message.sid, message);
 
-            session = await this._sessionManager.initialiseInboundSession(jid, message);
-
-            if(!session.matches_inbound_from(message.sid, message.key_base64)) {
-                throw new Error('Message is not verfied!')
+            if(idKey && !session.matches_inbound_from(idKey, message.key_base64)) {
+                throw new Error('Message is from untrusted source')
             }
 
-            const plaintext = await this.decryptMessage(jid, message);
+            const plaintext = await this.decryptMessage(message);
             return plaintext;
         } else {
             // TODO handle OLM.BAD_MESSAGE_MAC error through try and catch
@@ -131,7 +138,7 @@ class MessageManager {
             // sender this way, the invalid session of the original
             // sender will get overwritten with this newly created,
             // valid session.
-            return await this.decryptMessage(jid, message);
+            return await this.decryptMessage(message);
         }
     }
 }
@@ -142,8 +149,9 @@ class SessionManager {
     private _account: Account;
     private _store: LocalStorageStore;
     private _idKey: string;
+    private _deviceId: number;
     private _jid: string;
-    private _pickledAccountId: string;
+    private _pickledAccountId: number;
     private _initialised: boolean = false;
 
     constructor(jid: string) {
@@ -151,30 +159,46 @@ class SessionManager {
         this._store = new LocalStorageStore(jid);
         this._account = new Account();
 
-        this._pickledAccountId = this._store.get(PICKLED_ACCOUNT_ID) as string;
+        this._pickledAccountId = parseInt(this._store.get(PICKLED_ACCOUNT_ID) as string);
+        this._deviceId = parseInt(this._store.get(DEVICE_ID) as string);
 
         const pickledAccount = this._store.get(PICKLED_ACCOUNT);
 
-        if (pickledAccount && this._pickledAccountId) {
-            this._account.unpickle(this._pickledAccountId, pickledAccount);
+        if (pickledAccount && this._pickledAccountId && this._deviceId) {
+            this._account.unpickle(this._pickledAccountId.toString(), pickledAccount);
         } else {
-            const randValues = crypto.getRandomValues(new Uint32Array(1));
+            const randValues = crypto.getRandomValues(new Uint32Array(2));
             this._account.create();
-            this._pickledAccountId = randValues[0].toString();
+            this._pickledAccountId = randValues[0];
+            this._deviceId = randValues[1];
             this._store.set(PICKLED_ACCOUNT_ID, this._pickledAccountId);
-            this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId));
+            this._store.set(DEVICE_ID, this._deviceId);
+            this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
         }
 
         this._idKey = JSON.parse(this._account.identity_keys()).curve25519;
         this._store.set(IDENTITY_KEY, this._idKey);
     }
 
+    // private refillPreKeys(bundle: Bundle, session: Session): Bundle {
+    //     const test = this._account.remove_one_time_keys(session);
+    //     this._account.generate_one_time_keys(1);
+    //     //bundle.prekeys.map
+    //     this._account.mark_keys_as_published();
+    //     return bundle;
+    // }
 
+    // The first thing that needs to happen if a client wants to
+        // start using OMEMO is they need to generate an IdentityKey
+        // and a Device ID. The IdentityKey is a Curve25519 [6]
+        // public/private Key pair. The Device ID is a randomly
+        // generated integer between 1 and 2^31 - 1.
+        
     // Handle regenerating used keys
     generatePreKeyBundle(): Bundle {
-        const randomIds = crypto.getRandomValues(new Uint32Array(1));
+        const randomIds = crypto.getRandomValues(new Uint32Array(2));
         const signedPreKeyId = randomIds[0];
-        this._account.generate_one_time_keys(5);
+        this._account.generate_one_time_keys(PREKEYS);
         const oneTimePreKeys = JSON.parse(this._account.one_time_keys()).curve25519;  
         const signature = this._account.sign(signedPreKeyId + this._idKey);
 
@@ -185,6 +209,7 @@ class SessionManager {
         //this._account.mark_keys_as_published();
 
         return {
+            deviceId: this._deviceId,
             ik: this._idKey,
             spks: signature,
             spkId: signedPreKeyId,
@@ -198,27 +223,26 @@ class SessionManager {
         }
     }
 
-    session(jid: string): Session | null {
-        let session = this._sessions.get(jid);
+    session(jid: string, deviceId: number): Session | null {
+        let session = this._sessions.get(`${jid}/${deviceId}`);
 
         if(!session) {
-            return this.loadSession(jid);
+            return this.loadSession(jid, deviceId);
         }
         return session;
     }
 
-    encryptKey(key: string, jid: string) {
-        const session = this.session(jid) as Session;
+    encryptKey(key: string, jid: string, deviceId: number) {
+        const session = this.session(jid, deviceId) as Session;
         const encrypted = session.encrypt(key);
-        this.pickleSession(jid, session);
+        this.pickleSession(jid, deviceId, session);
         return encrypted;
     }
 
-    decryptKey(encryptedMessage: EncryptedMessage, jid: string) {
-        const session = this.session(jid) as Session;
+    decryptKey(encryptedMessage: EncryptedMessage) {
+        const session = this.session(encryptedMessage.jid, encryptedMessage.sid) as Session;
         const decrypted = session.decrypt(encryptedMessage.type, encryptedMessage.key_base64);
-        this.pickleSession(jid, session);
-        this._store.set(`${IDENTITY_PREFIX}${jid}`, encryptedMessage.sid);
+        this.pickleSession(encryptedMessage.jid, encryptedMessage.sid, session);
         return decrypted;
     }
 
@@ -230,6 +254,10 @@ class SessionManager {
         return this._store;
     }
 
+    get JID(): string {
+        return this._jid;
+    }
+
     get IdentityKey(): string {
         return this._idKey as string;
     }
@@ -238,51 +266,53 @@ class SessionManager {
         return this._initialised;
     }
 
-    private loadSession(jid: string): Session | null {
+    private loadSession(jid: string, deviceId: number): Session | null {
         const session = new Session();
 
-        const pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}`);
-        const pickledSession = this._store.get(`${PICKLED_SESSION_PREFIX}${jid}`);
+        const pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}`);
+        const pickledSession = this._store.get(`${PICKLED_SESSION_PREFIX}${jid}/${deviceId}`);
 
         if (pickledSession) {
-            console.log(chalk.blue(`Load ${this._jid}'s session with ${jid}: ${pickledSession}`));
+            console.log(chalk.blue(`Load ${this._jid}'s session with ${jid}/${deviceId}: ${pickledSession}`));
             session.unpickle(pickledSessionKey as string, pickledSession);
-            this._sessions.set(jid, session);
+            this._sessions.set(`${jid}/${deviceId}`, session);
 
             return session;
         }
         return null;
     }
 
-    private pickleSession(jid: string, session: Session) {
-        let pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}`);
+    private pickleSession(jid: string, deviceId: number, session: Session) {
+        let pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}`);
         if(!pickledSessionKey) {
             const randValues = crypto.getRandomValues(new Uint32Array(1));
             pickledSessionKey = randValues[0].toString();
-            this._store.set(`${PICKLED_SESSION_KEY_PREFIX}${jid}`, pickledSessionKey);
+            this._store.set(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}`, pickledSessionKey);
         }
 
-        this._store.set(`${PICKLED_SESSION_PREFIX}${jid}`, session.pickle(pickledSessionKey));
+        this._store.set(`${PICKLED_SESSION_PREFIX}${jid}/${deviceId}`, session.pickle(pickledSessionKey));
     }
 
-    private createSession(jid: string): Session {
+    private createSession(jid: string, deviceId: number): Session {
         const session = new Session();
-        this.pickleSession(jid, session);
+        this.pickleSession(jid, deviceId, session);
         return session;
     }
 
-    async initialiseInboundSession(jid: string, keyExchangeMessage: EncryptedMessage): Promise<Session> {
-        const session = this.createSession(jid);
+    async initialiseInboundSession(jid: string, deviceId: number, keyExchangeMessage: EncryptedMessage): Promise<Session> {
+        const session = this.createSession(jid, keyExchangeMessage.sid);
 
         session.create_inbound(this._account, keyExchangeMessage.key_base64);
+        //TODO get identity from bundle for the device id if we don't have it yet!
+        //session.create_inbound_from(this._account, idkey from sender's device bundle, keyExchangeMessage.key_base64);
 
         this._account.remove_one_time_keys(session);
         this._account.generate_one_time_keys(1);
         //this._account.mark_keys_as_published(); //see generatedPreKeyBundle
 
-        this._sessions.set(jid, session);
-        this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId as string));  
-        this.pickleSession(jid, session);
+        this._sessions.set(`${jid}/${deviceId}`, session);
+        this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));  
+        this.pickleSession(jid, deviceId, session);
 
         return session;
     }
@@ -295,24 +325,25 @@ class SessionManager {
 
         console.log(chalk.blue(`${this._jid}'s verified ${jid}'s identity`));
 
-        const session = this.createSession(jid);
+        const session = this.createSession(jid, bundle.deviceId);
 
         // TODO implement isTrusted
-        this._store.set(`${IDENTITY_PREFIX}${jid}`, bundle.ik);
+        this._store.set(`${IDENTITY_PREFIX}${jid}/${bundle.deviceId}`, bundle.ik);
 
          //TODO PreKey management
          // - refill keys after one time use
+         //storePrekey used, does the sender or receiver store this?
         const otk_id = bundle.prekeys[crypto.getRandomValues(new Uint32Array(1))[0] % 5];
 
-        console.log(chalk.blue(`${this._jid} gets ${jid}'s prekey: ${otk_id.key}`));
+        console.log(chalk.blue(`${this._jid} gets ${jid}/${bundle.deviceId}'s prekey: ${otk_id.key}`));
 
         session.create_outbound(
             this._account, bundle.ik, otk_id.key
         );
 
-        this._sessions.set(jid, session);
-        this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId as string));  
-        this.pickleSession(jid, session);
+        this._sessions.set(`${jid}/${bundle.deviceId}`, session);
+        this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));  
+        this.pickleSession(jid, bundle.deviceId, session);
 
         return session;
     }
@@ -343,29 +374,31 @@ class SessionManager {
 
     //session init
 
+    // TODO deal with bundles in terms of devices per user. User can have multiple devices, therefore multiple bundles.
+    // TODO!! get devicelist for recipient first, then a bundle for each device id to send messages to.
     const bobsBundle = bobSessionManager.generatePreKeyBundle();
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's bundle: ${JSON.stringify(bobsBundle)}`));
 
 
-    if (!aliceSessionManager.session('bob')) {
+    if (!aliceSessionManager.session('bob', bobsBundle.deviceId)) {
         await aliceSessionManager.initialiseOutboundSession('bob', bobsBundle);
-        const initialMessage = await aliceMsgManager.encryptMessage('bob', '');
+        const initialMessage = await aliceMsgManager.encryptMessage('bob', bobsBundle.deviceId, '');
 
         //bob receives key exchange
         console.log(JSON.parse(bobSessionManager.Account.one_time_keys()).curve25519);
-        await bobMsgManager.processMessage('alice', initialMessage as EncryptedMessage);
+        await bobMsgManager.processMessage(initialMessage as EncryptedMessage);
         console.log(JSON.parse(bobSessionManager.Account.one_time_keys()).curve25519);
     }
 
     const charliesBundle = charlieSessionManager.generatePreKeyBundle();
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Charlie's bundle: ${JSON.stringify(charliesBundle)}`));
 
-    if (!aliceSessionManager.session('charlie')) {
+    if (!aliceSessionManager.session('charlie', charliesBundle.deviceId)) {
         await aliceSessionManager.initialiseOutboundSession('charlie', charliesBundle);
-        const initialMessage = await aliceMsgManager.encryptMessage('charlie', '');
+        const initialMessage = await aliceMsgManager.encryptMessage('charlie', charliesBundle.deviceId, '');
 
         //charlie receives key exchange
-        await charlieMsgManager.processMessage('alice', initialMessage as EncryptedMessage);
+        await charlieMsgManager.processMessage(initialMessage as EncryptedMessage);
     }
 
     let aliceCounter = 0;
@@ -376,41 +409,41 @@ class SessionManager {
         let toSend = `messageToBobFromAlice${aliceCounter++}`;
 
         console.log(chalk.red(`alice Encrypts: ${toSend}`));
-        let encryptedMessage = await aliceMsgManager.encryptMessage('bob', toSend);
+        let encryptedMessage = await aliceMsgManager.encryptMessage('bob', bobsBundle.deviceId, toSend);
 
         let plaintext = null;
         //bob receives first proper message after key exchange
         console.log(chalk.rgb(255, 191, 0)(`bob receives from alice: ${JSON.stringify(encryptedMessage)}`));
-        plaintext = await bobMsgManager.processMessage('alice', encryptedMessage);
+        plaintext = await bobMsgManager.processMessage(encryptedMessage);
 
         console.log(chalk.green(`bob Decrypts: ${plaintext}`));
         toSend = `messageToAliceFromBob${bobCounter++}`;
 
-        encryptedMessage = await bobMsgManager.encryptMessage('alice', toSend);
+        encryptedMessage = await bobMsgManager.encryptMessage('alice', encryptedMessage.sid, toSend);
         console.log(chalk.red(`bob Encrypts: ${toSend}`));
 
         console.log(chalk.rgb(255, 191, 0)(`alice receives from bob: ${JSON.stringify(encryptedMessage)}`));
-        plaintext = await aliceMsgManager.processMessage('bob', encryptedMessage);
+        plaintext = await aliceMsgManager.processMessage(encryptedMessage);
         console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
 
         toSend = `messageToCharlieFromAlice${aliceCounter++}`;
 
         console.log(chalk.red(`alice Encrypts: ${toSend}`));
-        encryptedMessage = await aliceMsgManager.encryptMessage('charlie', toSend);
+        encryptedMessage = await aliceMsgManager.encryptMessage('charlie', charliesBundle.deviceId, toSend);
         //bob receives first proper message after key exchange
         console.log(chalk.rgb(255, 191, 0)(`charlie receives from alice: ${JSON.stringify(encryptedMessage)}`));
-        plaintext = await charlieMsgManager.processMessage('alice', encryptedMessage);
+        plaintext = await charlieMsgManager.processMessage(encryptedMessage);
 
         console.log(chalk.green(`charlie Decrypts: ${plaintext}`));
 
         if(aliceCounter%5 === 0) {
             toSend = `messageToAliceFromCharlie${charlieCounter++}`;
 
-            encryptedMessage = await charlieMsgManager.encryptMessage('alice', toSend);
+            encryptedMessage = await charlieMsgManager.encryptMessage('alice', encryptedMessage.sid, toSend);
             console.log(chalk.red(`charlie Encrypts: ${toSend}`));
 
             console.log(chalk.rgb(255, 191, 0)(`alice receives from charlie: ${JSON.stringify(encryptedMessage)}`));
-            plaintext = await aliceMsgManager.processMessage('charlie', encryptedMessage);
+            plaintext = await aliceMsgManager.processMessage(encryptedMessage);
             console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
         }
 
