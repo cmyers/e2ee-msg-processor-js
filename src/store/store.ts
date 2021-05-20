@@ -263,6 +263,16 @@ export class LocalStorageStore {
     return false;
   }
 
+  itemsContaining(partialKey: string): Array<string> {
+    const items: Array<string> = [];
+    for (let i = 0; i < this.localStorage.length; i++) {
+      if (this.localStorage.key(i).includes(partialKey)) {
+        items.push(this.localStorage.key(i));
+      }
+    }
+    return items;
+  }
+
   hasItems(): boolean {
     return this.localStorage.length > 0;
   }
