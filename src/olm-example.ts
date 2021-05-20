@@ -26,13 +26,17 @@ const KEY_ALGO = {
 
 interface EncryptedMessage {
     jid: string,
-    rid: number,
-    sid: number,
-    iv_base64: string,
-    key_base64: string,
-    payload_base64: string,
-    type: number
-}
+    header: {
+        sid: number
+        keys: [{
+            key_base64: string,
+            type: number,
+            rid: number
+        }],
+        iv_base64: string
+    },
+    payload_base64: string
+};
 
 interface Bundle {
     deviceId: number,
@@ -54,8 +58,8 @@ class MessageManager {
     }
 
     async encryptMessage(jid: string, rid: number, plaintext: string): Promise<EncryptedMessage> {
-        //TODO get all device ids for jid
         const sid = parseInt(this._sessionManager.Store.get(DEVICE_ID) as string);
+        console.log(this._sessionManager.deviceIdsFor(jid));
         const iv = crypto.getRandomValues(new Uint8Array(12)),
             key = await crypto.subtle.generateKey(KEY_ALGO, true, ['encrypt', 'decrypt']),
             algo = {
@@ -74,12 +78,18 @@ class MessageManager {
 
         return {
             jid: this._sessionManager.JID,
-            rid,
-            sid,
-            iv_base64: DataUtils.arrayBufferToBase64String(iv),
-            key_base64: (encryptedKey as any).body,
-            payload_base64: DataUtils.arrayBufferToBase64String(ciphertext),
-            type: (encryptedKey as any).type
+            header: {
+                sid,
+                iv_base64: DataUtils.arrayBufferToBase64String(iv),
+                keys: [
+                    {
+                        key_base64: (encryptedKey as any).body,
+                        rid,
+                        type: (encryptedKey as any).type
+                    }
+                ]
+            },
+            payload_base64: DataUtils.arrayBufferToBase64String(ciphertext)
         }
     }
 
@@ -92,7 +102,7 @@ class MessageManager {
 
         const algo = {
             'name': 'AES-GCM',
-            'iv': DataUtils.base64StringToArrayBuffer(encryptedMessage.iv_base64),
+            'iv': DataUtils.base64StringToArrayBuffer(encryptedMessage.header.iv_base64),
             'tagLength': TAG_LENGTH
         };
 
@@ -109,14 +119,14 @@ class MessageManager {
     //TODO Message Archive - XMPP layer? 
     async processMessage(message: EncryptedMessage): Promise<string> {
         //TODO get session for each deviceid for this jid!
-        let session = this._sessionManager.session(message.jid, message.sid);
+        let session = this._sessionManager.session(message.jid, message.header.sid);
 
-        if (!session && message.type === 0) {
+        if (!session && message.header.keys[0].type === 0) {
             //TODO Idkey should be pulled from bundle for each device easlier on and stored as such to retreive here
-            const idKey = this._sessionManager.Store.get(`${IDENTITY_PREFIX}${message.jid}/${message.sid}`);
-            session = await this._sessionManager.initialiseInboundSession(message.jid, message.sid, message);
+            const idKey = this._sessionManager.Store.get(`${IDENTITY_PREFIX}${message.jid}/${message.header.sid}`);
+            session = await this._sessionManager.initialiseInboundSession(message.jid, message.header.sid, message);
 
-            if(idKey && !session.matches_inbound_from(idKey, message.key_base64)) {
+            if(idKey && !session.matches_inbound_from(idKey, message.header.keys[0].key_base64)) {
                 throw new Error('Message is from untrusted source')
             }
 
@@ -152,7 +162,6 @@ class SessionManager {
     private _deviceId: number;
     private _jid: string;
     private _pickledAccountId: number;
-    private _initialised: boolean = false;
 
     constructor(jid: string) {
         this._jid = jid;
@@ -223,6 +232,10 @@ class SessionManager {
         }
     }
 
+    deviceIdsFor(jid: string) {
+        return this.Store.itemsContaining(`${IDENTITY_PREFIX}${jid}`);
+    }
+
     session(jid: string, deviceId: number): Session | null {
         let session = this._sessions.get(`${jid}/${deviceId}`);
 
@@ -239,10 +252,11 @@ class SessionManager {
         return encrypted;
     }
 
+    //TODO decrypt key from rid key
     decryptKey(encryptedMessage: EncryptedMessage) {
-        const session = this.session(encryptedMessage.jid, encryptedMessage.sid) as Session;
-        const decrypted = session.decrypt(encryptedMessage.type, encryptedMessage.key_base64);
-        this.pickleSession(encryptedMessage.jid, encryptedMessage.sid, session);
+        const session = this.session(encryptedMessage.jid, encryptedMessage.header.sid) as Session;
+        const decrypted = session.decrypt(encryptedMessage.header.keys[0].type, encryptedMessage.header.keys[0].key_base64);
+        this.pickleSession(encryptedMessage.jid, encryptedMessage.header.sid, session);
         return decrypted;
     }
 
@@ -260,10 +274,6 @@ class SessionManager {
 
     get IdentityKey(): string {
         return this._idKey as string;
-    }
-
-    get Initialised(): boolean {
-        return this._initialised;
     }
 
     private loadSession(jid: string, deviceId: number): Session | null {
@@ -300,9 +310,9 @@ class SessionManager {
     }
 
     async initialiseInboundSession(jid: string, deviceId: number, keyExchangeMessage: EncryptedMessage): Promise<Session> {
-        const session = this.createSession(jid, keyExchangeMessage.sid);
+        const session = this.createSession(jid, keyExchangeMessage.header.sid);
 
-        session.create_inbound(this._account, keyExchangeMessage.key_base64);
+        session.create_inbound(this._account, keyExchangeMessage.header.keys[0].key_base64);
         //TODO get identity from bundle for the device id if we don't have it yet!
         //session.create_inbound_from(this._account, idkey from sender's device bundle, keyExchangeMessage.key_base64);
 
@@ -369,6 +379,9 @@ class SessionManager {
     const bobSessionManager = new SessionManager('bob');
     const bobMsgManager = new MessageManager(bobSessionManager);
 
+    //const bob2SessionManager = new SessionManager('bob');
+    //const bob2MsgManager = new MessageManager(bob2SessionManager);
+
     const charlieSessionManager = new SessionManager('charlie');
     const charlieMsgManager = new MessageManager(charlieSessionManager);
 
@@ -379,6 +392,8 @@ class SessionManager {
     const bobsBundle = bobSessionManager.generatePreKeyBundle();
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's bundle: ${JSON.stringify(bobsBundle)}`));
 
+    //const bob2sBundle = bob2SessionManager.generatePreKeyBundle();
+    //console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob2's bundle: ${JSON.stringify(bob2sBundle)}`));
 
     if (!aliceSessionManager.session('bob', bobsBundle.deviceId)) {
         await aliceSessionManager.initialiseOutboundSession('bob', bobsBundle);
@@ -419,7 +434,7 @@ class SessionManager {
         console.log(chalk.green(`bob Decrypts: ${plaintext}`));
         toSend = `messageToAliceFromBob${bobCounter++}`;
 
-        encryptedMessage = await bobMsgManager.encryptMessage('alice', encryptedMessage.sid, toSend);
+        encryptedMessage = await bobMsgManager.encryptMessage('alice', encryptedMessage.header.sid, toSend);
         console.log(chalk.red(`bob Encrypts: ${toSend}`));
 
         console.log(chalk.rgb(255, 191, 0)(`alice receives from bob: ${JSON.stringify(encryptedMessage)}`));
@@ -439,7 +454,7 @@ class SessionManager {
         if(aliceCounter%5 === 0) {
             toSend = `messageToAliceFromCharlie${charlieCounter++}`;
 
-            encryptedMessage = await charlieMsgManager.encryptMessage('alice', encryptedMessage.sid, toSend);
+            encryptedMessage = await charlieMsgManager.encryptMessage('alice', encryptedMessage.header.sid, toSend);
             console.log(chalk.red(`charlie Encrypts: ${toSend}`));
 
             console.log(chalk.rgb(255, 191, 0)(`alice receives from charlie: ${JSON.stringify(encryptedMessage)}`));
