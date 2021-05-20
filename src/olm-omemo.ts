@@ -124,7 +124,7 @@ export class MessageManager {
         if (!session && message.header.keys[0].type === 0) {
             //TODO Idkey should be pulled from bundle for each device easlier on and stored as such to retreive here
             const idKey = this._sessionManager.Store.get(`${IDENTITY_PREFIX}${message.jid}/${message.header.sid}`);
-            session = await this._sessionManager.initialiseInboundSession(message.jid, message.header.sid, message);
+            session = await this._sessionManager.initialiseInboundSession(message);
 
             if(idKey && !session.matches_inbound_from(idKey, message.header.keys[0].key_base64)) {
                 throw new Error('Message is from untrusted source')
@@ -309,8 +309,8 @@ export class SessionManager {
         return session;
     }
 
-    async initialiseInboundSession(jid: string, deviceId: number, keyExchangeMessage: EncryptedMessage): Promise<Session> {
-        const session = this.createSession(jid, keyExchangeMessage.header.sid);
+    async initialiseInboundSession(keyExchangeMessage: EncryptedMessage): Promise<Session> {
+        const session = this.createSession(keyExchangeMessage.jid, keyExchangeMessage.header.sid);
 
         session.create_inbound(this._account, keyExchangeMessage.header.keys[0].key_base64);
         //TODO get identity from bundle for the device id if we don't have it yet!
@@ -320,9 +320,9 @@ export class SessionManager {
         this._account.generate_one_time_keys(1);
         //this._account.mark_keys_as_published(); //see generatedPreKeyBundle
 
-        this._sessions.set(`${jid}/${deviceId}`, session);
+        this._sessions.set(`${keyExchangeMessage.jid}/${keyExchangeMessage.header.sid}`, session);
         this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));  
-        this.pickleSession(jid, deviceId, session);
+        this.pickleSession(keyExchangeMessage.jid, keyExchangeMessage.header.sid, session);
 
         return session;
     }
