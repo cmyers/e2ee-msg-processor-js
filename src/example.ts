@@ -1,84 +1,98 @@
-import * as libsignal from '@privacyresearch/libsignal-protocol-typescript'
-import { SessionCipher } from '@privacyresearch/libsignal-protocol-typescript';
-import { SignalProtocolStore } from './store/store';
+import { init as olmInit } from 'olm';
+import { EncryptedMessage, MessageManager, SessionManager } from './olm-omemo';
 import chalk from 'chalk';
-import { Omemo } from './omemo';
 
 (async () => {
-    const aliceStore = new SignalProtocolStore("alice_localhost");
-    const bobStore = new SignalProtocolStore("bob_localhost");
+    await olmInit();
+    const aliceSessionManager = new SessionManager('alice');
+    const aliceMsgManager = new MessageManager(aliceSessionManager);
 
-    const hasSession = aliceStore.containsKey('session') && bobStore.containsKey('session');
+    const bobSessionManager = new SessionManager('bob');
+    const bobMsgManager = new MessageManager(bobSessionManager);
+
+    //const bob2SessionManager = new SessionManager('bob');
+    //const bob2MsgManager = new MessageManager(bob2SessionManager);
+
+    const charlieSessionManager = new SessionManager('charlie');
+    const charlieMsgManager = new MessageManager(charlieSessionManager);
+
+    //session init
+
+    // TODO deal with bundles in terms of devices per user. User can have multiple devices, therefore multiple bundles.
+    // TODO!! get devicelist for recipient first, then a bundle for each device id to send messages to.
+    const bobsBundle = bobSessionManager.generatePreKeyBundle();
+    console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's bundle: ${JSON.stringify(bobsBundle)}`));
+
+    //const bob2sBundle = bob2SessionManager.generatePreKeyBundle();
+    //console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob2's bundle: ${JSON.stringify(bob2sBundle)}`));
+
+    if (!aliceSessionManager.session('bob', bobsBundle.deviceId)) {
+        await aliceSessionManager.initialiseOutboundSession('bob', bobsBundle);
+        const initialMessage = await aliceMsgManager.encryptMessage('bob', bobsBundle.deviceId, '');
+
+        //bob receives key exchange
+        console.log(JSON.parse(bobSessionManager.Account.one_time_keys()).curve25519);
+        await bobMsgManager.processMessage(initialMessage as EncryptedMessage);
+        console.log(JSON.parse(bobSessionManager.Account.one_time_keys()).curve25519);
+    }
+
+    const charliesBundle = charlieSessionManager.generatePreKeyBundle();
+    console.log(chalk.rgb(255, 191, 0)(`Alice gets Charlie's bundle: ${JSON.stringify(charliesBundle)}`));
+
+    if (!aliceSessionManager.session('charlie', charliesBundle.deviceId)) {
+        await aliceSessionManager.initialiseOutboundSession('charlie', charliesBundle);
+        const initialMessage = await aliceMsgManager.encryptMessage('charlie', charliesBundle.deviceId, '');
+
+        //charlie receives key exchange
+        await charlieMsgManager.processMessage(initialMessage as EncryptedMessage);
+    }
 
     let aliceCounter = 0;
     let bobCounter = 0;
-
-    let aliceSessionCipher: libsignal.SessionCipher;
-    let bobSessionCipher: libsignal.SessionCipher;
-
-    if (hasSession) {
-        const ALICE_ADDRESS = new libsignal.SignalProtocolAddress("alice@localhost", aliceStore.get('registrationId'));
-        const BOB_ADDRESS = new libsignal.SignalProtocolAddress("bob@localhost", bobStore.get('registrationId'));
-
-        console.log(chalk.cyan(`${ALICE_ADDRESS.getName()} has a session with ${BOB_ADDRESS.getName()}`));
-
-        aliceSessionCipher = new SessionCipher(aliceStore, BOB_ADDRESS);
-        bobSessionCipher = new SessionCipher(bobStore, ALICE_ADDRESS);
-    } else {
-        await  Omemo.generateIdentity(aliceStore);
-        await  Omemo.generateIdentity(bobStore);
-
-        const ALICE_ADDRESS = new libsignal.SignalProtocolAddress("alice@localhost", aliceStore.get('registrationId'));
-        const BOB_ADDRESS = new libsignal.SignalProtocolAddress("bob@localhost", bobStore.get('registrationId'));
-
-        const preKeyBundle = await  Omemo.generatePreKeyBundle(bobStore);
-
-        var builder = new libsignal.SessionBuilder(aliceStore, BOB_ADDRESS);
-        await builder.processPreKey(preKeyBundle);
-
-        aliceSessionCipher = new libsignal.SessionCipher(aliceStore, BOB_ADDRESS);
-        bobSessionCipher = new libsignal.SessionCipher(bobStore, ALICE_ADDRESS);
-    }
-
-    const aliceDeviceId = await aliceSessionCipher.storage.getLocalRegistrationId() as number;
-    const bobDeviceId = await bobSessionCipher.storage.getLocalRegistrationId() as number;
+    let charlieCounter = 0;
 
     setInterval(async () => {
-        const toSend = `messageToBobFromAlice${aliceCounter++}`;
-        const encryptedMessage = await  Omemo.encryptMessage(aliceSessionCipher, toSend);
+        let toSend = `messageToBobFromAlice${aliceCounter++}`;
 
-        console.log(chalk.red(`Alice Encrypts: ${toSend}`));
+        console.log(chalk.red(`alice Encrypts: ${toSend}`));
+        let encryptedMessage = await aliceMsgManager.encryptMessage('bob', bobsBundle.deviceId, toSend);
+
         let plaintext = null;
+        //bob receives first proper message after key exchange
+        console.log(chalk.rgb(255, 191, 0)(`bob receives from alice: ${JSON.stringify(encryptedMessage)}`));
+        plaintext = await bobMsgManager.processMessage(encryptedMessage);
 
-        console.log(chalk.red(`Bob receives: ${JSON.stringify(encryptedMessage)}`));
+        console.log(chalk.green(`bob Decrypts: ${plaintext}`));
+        toSend = `messageToAliceFromBob${bobCounter++}`;
 
-        if (encryptedMessage.rid !== bobDeviceId || encryptedMessage.jid !== 'bob@localhost') {
-            throw new Error('Message not intended for bob@localhost!');
+        encryptedMessage = await bobMsgManager.encryptMessage('alice', encryptedMessage.header.sid, toSend);
+        console.log(chalk.red(`bob Encrypts: ${toSend}`));
+
+        console.log(chalk.rgb(255, 191, 0)(`alice receives from bob: ${JSON.stringify(encryptedMessage)}`));
+        plaintext = await aliceMsgManager.processMessage(encryptedMessage);
+        console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
+
+        toSend = `messageToCharlieFromAlice${aliceCounter++}`;
+
+        console.log(chalk.red(`alice Encrypts: ${toSend}`));
+        encryptedMessage = await aliceMsgManager.encryptMessage('charlie', charliesBundle.deviceId, toSend);
+        //bob receives first proper message after key exchange
+        console.log(chalk.rgb(255, 191, 0)(`charlie receives from alice: ${JSON.stringify(encryptedMessage)}`));
+        plaintext = await charlieMsgManager.processMessage(encryptedMessage);
+
+        console.log(chalk.green(`charlie Decrypts: ${plaintext}`));
+
+        if(aliceCounter%5 === 0) {
+            toSend = `messageToAliceFromCharlie${charlieCounter++}`;
+
+            encryptedMessage = await charlieMsgManager.encryptMessage('alice', encryptedMessage.header.sid, toSend);
+            console.log(chalk.red(`charlie Encrypts: ${toSend}`));
+
+            console.log(chalk.rgb(255, 191, 0)(`alice receives from charlie: ${JSON.stringify(encryptedMessage)}`));
+            plaintext = await aliceMsgManager.processMessage(encryptedMessage);
+            console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
         }
 
-        plaintext = await  Omemo.decryptMessage(bobSessionCipher, encryptedMessage);
-
-        if (plaintext !== null) {
-            console.log(chalk.green(`Bob Decrypts: ${plaintext}`));
-
-            const toSend = `messageToAliceFromBob${bobCounter++}`;
-            const encryptedMessage = await  Omemo.encryptMessage(bobSessionCipher, toSend);
-            console.log(chalk.red(`Bob Encrypts: ${toSend}`));
-
-            plaintext = null;
-
-            console.log(chalk.red(`Alice receives: ${JSON.stringify(encryptedMessage)}`));
-
-            if (encryptedMessage.rid !== aliceDeviceId || encryptedMessage.jid !== 'alice@localhost') {
-                throw new Error('Message not intended for alice@localhost!');
-            }
-
-            plaintext = await  Omemo.decryptMessage(aliceSessionCipher, encryptedMessage);
-
-
-            if (plaintext !== null) {
-                console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
-            }
-        }
     }, 2000);
+
 })();
