@@ -4,16 +4,16 @@ import chalk from 'chalk';
 
 (async () => {
     await olmInit();
-    const aliceSessionManager = new SessionManager('alice');
+    const aliceSessionManager = new SessionManager('alice', 'alice');
     const aliceMsgManager = new MessageManager(aliceSessionManager);
 
-    const bobSessionManager = new SessionManager('bob');
+    const bobSessionManager = new SessionManager('bob', 'bob');
     const bobMsgManager = new MessageManager(bobSessionManager);
 
-    //const bob2SessionManager = new SessionManager('bob');
-    //const bob2MsgManager = new MessageManager(bob2SessionManager);
+    const bob2SessionManager = new SessionManager('bob', 'bob2');
+    const bob2MsgManager = new MessageManager(bob2SessionManager);
 
-    const charlieSessionManager = new SessionManager('charlie');
+    const charlieSessionManager = new SessionManager('charlie', 'charlie');
     const charlieMsgManager = new MessageManager(charlieSessionManager);
 
     //session init
@@ -23,17 +23,19 @@ import chalk from 'chalk';
     const bobsBundle = bobSessionManager.generatePreKeyBundle();
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's bundle: ${JSON.stringify(bobsBundle)}`));
 
-    //const bob2sBundle = bob2SessionManager.generatePreKeyBundle();
-    //console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob2's bundle: ${JSON.stringify(bob2sBundle)}`));
+    const bob2sBundle = bob2SessionManager.generatePreKeyBundle();
+    console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob2's bundle: ${JSON.stringify(bob2sBundle)}`));
 
     if (!aliceSessionManager.session('bob', bobsBundle.deviceId)) {
         await aliceSessionManager.initialiseOutboundSession('bob', bobsBundle);
-        const initialMessage = await aliceMsgManager.encryptMessage('bob', bobsBundle.deviceId, '');
+        await aliceSessionManager.initialiseOutboundSession('bob', bob2sBundle);
+        const initialMessage = await aliceMsgManager.encryptMessage('bob', '');
 
         //bob receives key exchange
-        console.log(JSON.parse(bobSessionManager.Account.one_time_keys()).curve25519);
+        //console.log(JSON.parse(bobSessionManager.Account.one_time_keys()).curve25519);
         await bobMsgManager.processMessage(initialMessage as EncryptedMessage);
-        console.log(JSON.parse(bobSessionManager.Account.one_time_keys()).curve25519);
+        await bob2MsgManager.processMessage(initialMessage as EncryptedMessage);
+        //console.log(JSON.parse(bobSessionManager.Account.one_time_keys()).curve25519);
     }
 
     const charliesBundle = charlieSessionManager.generatePreKeyBundle();
@@ -41,7 +43,7 @@ import chalk from 'chalk';
 
     if (!aliceSessionManager.session('charlie', charliesBundle.deviceId)) {
         await aliceSessionManager.initialiseOutboundSession('charlie', charliesBundle);
-        const initialMessage = await aliceMsgManager.encryptMessage('charlie', charliesBundle.deviceId, '');
+        const initialMessage = await aliceMsgManager.encryptMessage('charlie', '');
 
         //charlie receives key exchange
         await charlieMsgManager.processMessage(initialMessage as EncryptedMessage);
@@ -55,7 +57,7 @@ import chalk from 'chalk';
         let toSend = `messageToBobFromAlice${aliceCounter++}`;
 
         console.log(chalk.red(`alice Encrypts: ${toSend}`));
-        let encryptedMessage = await aliceMsgManager.encryptMessage('bob', bobsBundle.deviceId, toSend);
+        let encryptedMessage = await aliceMsgManager.encryptMessage('bob', toSend);
 
         let plaintext = null;
         //bob receives first proper message after key exchange
@@ -65,7 +67,12 @@ import chalk from 'chalk';
         console.log(chalk.green(`bob Decrypts: ${plaintext}`));
         toSend = `messageToAliceFromBob${bobCounter++}`;
 
-        encryptedMessage = await bobMsgManager.encryptMessage('alice', encryptedMessage.header.sid, toSend);
+        console.log(chalk.rgb(255, 191, 0)(`bob2 receives from alice: ${JSON.stringify(encryptedMessage)}`));
+        plaintext = await bob2MsgManager.processMessage(encryptedMessage);
+
+        console.log(chalk.green(`bob2 Decrypts: ${plaintext}`));
+
+        encryptedMessage = await bobMsgManager.encryptMessage('alice', toSend);
         console.log(chalk.red(`bob Encrypts: ${toSend}`));
 
         console.log(chalk.rgb(255, 191, 0)(`alice receives from bob: ${JSON.stringify(encryptedMessage)}`));
@@ -75,7 +82,7 @@ import chalk from 'chalk';
         toSend = `messageToCharlieFromAlice${aliceCounter++}`;
 
         console.log(chalk.red(`alice Encrypts: ${toSend}`));
-        encryptedMessage = await aliceMsgManager.encryptMessage('charlie', charliesBundle.deviceId, toSend);
+        encryptedMessage = await aliceMsgManager.encryptMessage('charlie', toSend);
         //bob receives first proper message after key exchange
         console.log(chalk.rgb(255, 191, 0)(`charlie receives from alice: ${JSON.stringify(encryptedMessage)}`));
         plaintext = await charlieMsgManager.processMessage(encryptedMessage);
@@ -85,7 +92,7 @@ import chalk from 'chalk';
         if(aliceCounter%5 === 0) {
             toSend = `messageToAliceFromCharlie${charlieCounter++}`;
 
-            encryptedMessage = await charlieMsgManager.encryptMessage('alice', encryptedMessage.header.sid, toSend);
+            encryptedMessage = await charlieMsgManager.encryptMessage('alice', toSend);
             console.log(chalk.red(`charlie Encrypts: ${toSend}`));
 
             console.log(chalk.rgb(255, 191, 0)(`alice receives from charlie: ${JSON.stringify(encryptedMessage)}`));
