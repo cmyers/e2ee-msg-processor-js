@@ -1,1 +1,1 @@
-libsignal-omemo-ts
+omemo-olm-ts
