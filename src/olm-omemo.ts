@@ -59,7 +59,6 @@ export class MessageManager {
         this._sessionManager = sessionManager;
     }
 
-    //TODO produce key for each deviceid
     async encryptMessage(jid: string, plaintext: string): Promise<EncryptedMessage> {
         const sid = parseInt(this._sessionManager.Store.get(DEVICE_ID)!);
         const deviceIds = this._sessionManager.deviceIdsFor(jid);
@@ -101,8 +100,7 @@ export class MessageManager {
         }
     }
 
-    private async decryptMessage(encryptedMessage: EncryptedMessage): Promise<string> {
-        const decryptedKey = this._sessionManager.decryptKey(encryptedMessage);
+    private async decryptMessage(encryptedMessage: EncryptedMessage, decryptedKey: string): Promise<string> {
         const key = DataUtils.base64StringToArrayBuffer(decryptedKey).slice(0, 16);
         const tag = DataUtils.base64StringToArrayBuffer(decryptedKey).slice(16);
         const key_obj = await crypto.subtle.importKey('raw', key, KEY_ALGO, true, ['encrypt', 'decrypt']);
@@ -125,23 +123,14 @@ export class MessageManager {
     //TODO keep copy of last message sent in case of client decryption failure and session-re-establish attempt
     //TODO Message Carbons - XMPP layer?
     //TODO Message Archive - XMPP layer? 
-    async processMessage(message: EncryptedMessage): Promise<string> {
-        //TODO get session for each deviceid for this jid!
-        let session = this._sessionManager.session(message.jid, message.header.sid);
-        const key = message.header.keys.find(x => x.rid === this._sessionManager.DeviceId)!;
+    async processMessage(message: EncryptedMessage): Promise<string | null> {
+        try {
+            const decryptedKey = await this._sessionManager.decryptKey(message);
+            return await this.decryptMessage(message, decryptedKey);
+        } catch {
+            //TODO log error?
+            //TODO establish new session and send an error control message?
 
-        if (!session && key.type === 0) {
-            //TODO Idkey should be pulled from bundle for each device easlier on and stored as such to retreive here
-            const idKey = this._sessionManager.Store.get(`${IDENTITY_PREFIX}${message.jid}/${message.header.sid}`);
-            session = await this._sessionManager.initialiseInboundSession(message);
-
-            if(idKey && !session.matches_inbound_from(idKey, key.key_base64)) {
-                throw new Error('Message is from untrusted source')
-            }
-
-            const plaintext = await this.decryptMessage(message);
-            return plaintext;
-        } else {
             // TODO handle OLM.BAD_MESSAGE_MAC error through try and catch
             // TODO from the XEP:
             // There are various reasons why decryption of an
@@ -157,7 +146,7 @@ export class MessageManager {
             // sender this way, the invalid session of the original
             // sender will get overwritten with this newly created,
             // valid session.
-            return await this.decryptMessage(message);
+            return null;
         }
     }
 }
@@ -263,9 +252,23 @@ export class SessionManager {
     }
 
     //TODO decrypt key from rid key
-    decryptKey(encryptedMessage: EncryptedMessage) {
-        const session = this.session(encryptedMessage.jid, encryptedMessage.header.sid)!;
-        const key = encryptedMessage.header.keys.find(x => x.rid === this.DeviceId)!;
+    async decryptKey(encryptedMessage: EncryptedMessage): Promise<string> {
+        const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId)!;
+
+        if(key === null) {
+            throw new Error('No key found for this device');
+        }
+
+        let session = this.session(encryptedMessage.jid, encryptedMessage.header.sid)!;
+
+        if (!session && key.type === 0) {
+            session = await this.initialiseInboundSession(encryptedMessage);
+
+            if(!session.matches_inbound(key.key_base64)) {
+                throw new Error('Something went wrong establishing a new session');
+            }
+        }
+
         const decrypted = session.decrypt(key.type, key.key_base64);
         this.pickleSession(encryptedMessage.jid, encryptedMessage.header.sid, session);
         return decrypted;
@@ -324,7 +327,7 @@ export class SessionManager {
         return session;
     }
 
-    async initialiseInboundSession(keyExchangeMessage: EncryptedMessage): Promise<Session> {
+    private async initialiseInboundSession(keyExchangeMessage: EncryptedMessage): Promise<Session> {
         const session = this.createSession(keyExchangeMessage.jid, keyExchangeMessage.header.sid);
         const key = keyExchangeMessage.header.keys.find(x => x.rid === this.DeviceId)!;
 
