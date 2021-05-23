@@ -98,6 +98,15 @@ import chalk from 'chalk';
             console.log(chalk.rgb(255, 191, 0)(`alice receives from charlie: ${JSON.stringify(encryptedMessage)}`));
             plaintext = await aliceMsgManager.processMessage(encryptedMessage);
             console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
+
+            toSend = `messageToAliceFromBob2-${bobCounter++}`;
+
+            encryptedMessage = await bob2MsgManager.encryptMessage('alice', toSend);
+            console.log(chalk.red(`bob2 Encrypts: ${toSend}`));
+
+            console.log(chalk.rgb(255, 191, 0)(`alice receives from bob2: ${JSON.stringify(encryptedMessage)}`));
+            plaintext = await aliceMsgManager.processMessage(encryptedMessage);
+            console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
         }
 
     }, 2000);
