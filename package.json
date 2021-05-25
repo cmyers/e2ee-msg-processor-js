@@ -1,5 +1,5 @@
 {
-  "name": "libsignal-omemo-ts",
+  "name": "olm-omemo-ts",
   "version": "0.0.1",
   "description": "",
   "main": "./dist/index.min.js",
@@ -13,7 +13,9 @@
     "!/dist/**/index.js"
   ],
   "keywords": [
-    "libsignal"
+    "olm",
+    "omemo",
+    "e2e encryption"
   ],
   "scripts": {
     "build": "tsc",
@@ -23,7 +25,7 @@
     "start": "node .\\dist\\example.js"
   },
   "author": "Chris Myers",
-  "license": "GPL-3.0",
+  "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/cmyers/stanza-publishoptions.git"
