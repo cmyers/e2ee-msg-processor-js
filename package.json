@@ -28,7 +28,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/cmyers/stanza-publishoptions.git"
+    "url": "https://github.com/cmyers/olm-omemo-ts.git"
   },
   "devDependencies": {
     "@types/node": "^12.20.10",
