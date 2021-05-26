@@ -7,51 +7,65 @@ import chalk from 'chalk';
     const aliceSessionManager = new SessionManager('alice', 'alice');
     const aliceMsgManager = new MessageManager(aliceSessionManager);
 
+    const alice2SessionManager = new SessionManager('alice', 'alice2');
+    const alice2MsgManager = new MessageManager(alice2SessionManager);
+
     const bobSessionManager = new SessionManager('bob', 'bob');
     const bobMsgManager = new MessageManager(bobSessionManager);
 
     const bob2SessionManager = new SessionManager('bob', 'bob2');
     const bob2MsgManager = new MessageManager(bob2SessionManager);
+    
+    console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's deviceIds: ${JSON.stringify([bobSessionManager.DeviceId, bob2SessionManager.DeviceId])}`));
+    aliceSessionManager.updateDeviceIds(bobSessionManager.JID, [bobSessionManager.DeviceId, bob2SessionManager.DeviceId]);
 
-    const charlieSessionManager = new SessionManager('charlie', 'charlie');
-    const charlieMsgManager = new MessageManager(charlieSessionManager);
-
-    //session init
-
-    // TODO deal with bundles in terms of devices per user. User can have multiple devices, therefore multiple bundles.
-    // TODO!! get devicelist for recipient first, then a bundle for each device id to send messages to.
     const bobsBundle = bobSessionManager.generatePreKeyBundle();
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's bundle: ${JSON.stringify(bobsBundle)}`));
 
     const bob2sBundle = bob2SessionManager.generatePreKeyBundle();
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob2's bundle: ${JSON.stringify(bob2sBundle)}`));
 
-    if (!aliceSessionManager.session('bob', bobsBundle.deviceId)) {
-        await aliceSessionManager.initialiseOutboundSession('bob', bobsBundle);
-        await aliceSessionManager.initialiseOutboundSession('bob', bob2sBundle);
+    console.log(chalk.rgb(255, 191, 0)(`Alice gets Alice's deviceIds: ${JSON.stringify([alice2SessionManager.DeviceId])}`));
+    aliceSessionManager.updateDeviceIds(alice2SessionManager.JID, [alice2SessionManager.DeviceId]);
+    
+    const alice2sBundle = alice2SessionManager.generatePreKeyBundle();
+    console.log(chalk.rgb(255, 191, 0)(`Alice gets Alice2's bundle: ${JSON.stringify(alice2sBundle)}`));
+
+    console.log(chalk.rgb(255, 191, 0)(`Bob gets Bob's deviceIds: ${JSON.stringify([bob2SessionManager.DeviceId])}`));
+    bobSessionManager.updateDeviceIds(bob2SessionManager.JID, [bob2SessionManager.DeviceId]);
+
+    if (!aliceSessionManager.session(alice2SessionManager.JID, alice2sBundle.deviceId)) {
+        await aliceSessionManager.initialiseOutboundSession(alice2SessionManager.JID, alice2sBundle);
+        const initialMessage = await aliceMsgManager.encryptMessage(alice2SessionManager.JID, '');
+
+        await alice2MsgManager.processMessage(initialMessage as EncryptedMessage);
+    }
+
+    if (!bobSessionManager.session(bob2SessionManager.JID, bob2sBundle.deviceId)) {
+        await bobSessionManager.initialiseOutboundSession(bob2SessionManager.JID, bob2sBundle);
+        const initialMessage = await bobMsgManager.encryptMessage(bob2SessionManager.JID, '');
+
+        await bob2MsgManager.processMessage(initialMessage as EncryptedMessage);
+    }
+
+    if (!aliceSessionManager.session(bobSessionManager.JID, bobsBundle.deviceId)) {
+        await aliceSessionManager.initialiseOutboundSession(bobSessionManager.JID, bobsBundle);
+        await aliceSessionManager.initialiseOutboundSession(bob2SessionManager.JID, bob2sBundle);
         const initialMessage = await aliceMsgManager.encryptMessage('bob', '');
 
-        //bob receives key exchange
-        //console.log(JSON.parse(bobSessionManager.Account.one_time_keys()).curve25519);
         await bobMsgManager.processMessage(initialMessage as EncryptedMessage);
+        console.log(chalk.rgb(255, 191, 0)(`Bob gets Alice's deviceIds: ${JSON.stringify([aliceSessionManager.DeviceId, alice2SessionManager.DeviceId])}`));
+
         await bob2MsgManager.processMessage(initialMessage as EncryptedMessage);
-        //console.log(JSON.parse(bobSessionManager.Account.one_time_keys()).curve25519);
+        console.log(chalk.rgb(255, 191, 0)(`Bob2 gets Alice's deviceIds: ${JSON.stringify([aliceSessionManager.DeviceId, alice2SessionManager.DeviceId])}`));
+
     }
 
-    const charliesBundle = charlieSessionManager.generatePreKeyBundle();
-    console.log(chalk.rgb(255, 191, 0)(`Alice gets Charlie's bundle: ${JSON.stringify(charliesBundle)}`));
-
-    if (!aliceSessionManager.session('charlie', charliesBundle.deviceId)) {
-        await aliceSessionManager.initialiseOutboundSession('charlie', charliesBundle);
-        const initialMessage = await aliceMsgManager.encryptMessage('charlie', '');
-
-        //charlie receives key exchange
-        await charlieMsgManager.processMessage(initialMessage as EncryptedMessage);
-    }
+    bobSessionManager.updateDeviceIds(aliceSessionManager.JID, [aliceSessionManager.DeviceId, alice2SessionManager.DeviceId]);
+    bob2SessionManager.updateDeviceIds(aliceSessionManager.JID, [aliceSessionManager.DeviceId, alice2SessionManager.DeviceId]);
 
     let aliceCounter = 0;
     let bobCounter = 0;
-    let charlieCounter = 0;
 
     setInterval(async () => {
         let toSend = `messageToBobFromAlice${aliceCounter++}`;
@@ -60,54 +74,49 @@ import chalk from 'chalk';
         let encryptedMessage = await aliceMsgManager.encryptMessage('bob', toSend);
 
         let plaintext = null;
-        //bob receives first proper message after key exchange
+        console.log(chalk.rgb(255, 191, 0)(`alice2 receives from alice: ${JSON.stringify(encryptedMessage)}`));
+        plaintext = await alice2MsgManager.processMessage(encryptedMessage);
+        console.log(chalk.green(`alice2 Decrypts: ${plaintext}`));
+
         console.log(chalk.rgb(255, 191, 0)(`bob receives from alice: ${JSON.stringify(encryptedMessage)}`));
         plaintext = await bobMsgManager.processMessage(encryptedMessage);
 
         console.log(chalk.green(`bob Decrypts: ${plaintext}`));
-        toSend = `messageToAliceFromBob${bobCounter++}`;
 
         console.log(chalk.rgb(255, 191, 0)(`bob2 receives from alice: ${JSON.stringify(encryptedMessage)}`));
         plaintext = await bob2MsgManager.processMessage(encryptedMessage);
 
         console.log(chalk.green(`bob2 Decrypts: ${plaintext}`));
 
-        encryptedMessage = await bobMsgManager.encryptMessage('alice', toSend);
-        console.log(chalk.red(`bob Encrypts: ${toSend}`));
+        if (!bobSessionManager.session('alice', alice2sBundle.deviceId)) {
+            await bobSessionManager.initialiseOutboundSession(alice2SessionManager.JID, alice2sBundle);
+            const initialMessage = await bobMsgManager.encryptMessage(alice2SessionManager.JID, '');
+            await alice2MsgManager.processMessage(initialMessage as EncryptedMessage);
+        }
 
+        if (!bobSessionManager.session(bobSessionManager.JID, bob2sBundle.deviceId)) {
+            await bobSessionManager.initialiseOutboundSession(bob2SessionManager.JID, bob2sBundle);
+            const initialMessage = await bobMsgManager.encryptMessage(bob2SessionManager.JID, '');
+            await bob2MsgManager.processMessage(initialMessage as EncryptedMessage);
+        }
+
+        toSend = `messageToAliceFromBob${bobCounter++}`;
+
+        console.log(chalk.red(`bob Encrypts: ${toSend}`));
+        encryptedMessage = await bobMsgManager.encryptMessage('alice', toSend);
+
+        plaintext = null;
         console.log(chalk.rgb(255, 191, 0)(`alice receives from bob: ${JSON.stringify(encryptedMessage)}`));
         plaintext = await aliceMsgManager.processMessage(encryptedMessage);
-        console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
+        console.log(chalk.green(`alice Decrypts: ${plaintext}`));
 
-        toSend = `messageToCharlieFromAlice${aliceCounter++}`;
+        console.log(chalk.rgb(255, 191, 0)(`alice2 receives from bob: ${JSON.stringify(encryptedMessage)}`));
+        plaintext = await alice2MsgManager.processMessage(encryptedMessage);
+        console.log(chalk.green(`alice2 Decrypts: ${plaintext}`));
 
-        console.log(chalk.red(`alice Encrypts: ${toSend}`));
-        encryptedMessage = await aliceMsgManager.encryptMessage('charlie', toSend);
-        //bob receives first proper message after key exchange
-        console.log(chalk.rgb(255, 191, 0)(`charlie receives from alice: ${JSON.stringify(encryptedMessage)}`));
-        plaintext = await charlieMsgManager.processMessage(encryptedMessage);
-
-        console.log(chalk.green(`charlie Decrypts: ${plaintext}`));
-
-        if(aliceCounter%5 === 0) {
-            toSend = `messageToAliceFromCharlie${charlieCounter++}`;
-
-            encryptedMessage = await charlieMsgManager.encryptMessage('alice', toSend);
-            console.log(chalk.red(`charlie Encrypts: ${toSend}`));
-
-            console.log(chalk.rgb(255, 191, 0)(`alice receives from charlie: ${JSON.stringify(encryptedMessage)}`));
-            plaintext = await aliceMsgManager.processMessage(encryptedMessage);
-            console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
-
-            toSend = `messageToAliceFromBob2-${bobCounter++}`;
-
-            encryptedMessage = await bob2MsgManager.encryptMessage('alice', toSend);
-            console.log(chalk.red(`bob2 Encrypts: ${toSend}`));
-
-            console.log(chalk.rgb(255, 191, 0)(`alice receives from bob2: ${JSON.stringify(encryptedMessage)}`));
-            plaintext = await aliceMsgManager.processMessage(encryptedMessage);
-            console.log(chalk.green(`Alice Decrypts: ${plaintext}`));
-        }
+        console.log(chalk.rgb(255, 191, 0)(`bob2 receives from bob: ${JSON.stringify(encryptedMessage)}`));
+        plaintext = await bob2MsgManager.processMessage(encryptedMessage);
+        console.log(chalk.green(`bob2 Decrypts: ${plaintext}`));
 
     }, 2000);
 

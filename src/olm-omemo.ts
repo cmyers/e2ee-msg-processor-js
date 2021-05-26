@@ -20,25 +20,32 @@ const IDENTITY_KEY = 'identityKey';
 const PREKEYS = 100;
 
 const KEY_ALGO = {
-    'name': 'AES-GCM',
-    'length': 128
+    name: 'AES-GCM',
+    length: 128
 };
 
+interface Device {
+    id: number;
+    jid: string;
+}
+
 interface Key {
+    jid: string;
     key_base64: string;
     type: number;
     rid: number;
 }
 
 export interface EncryptedMessage {
-    jid: string,
+    to: string,
+    from: string;
     header: {
         sid: number
         keys: Array<Key>,
         iv_base64: string
     },
     payload_base64: string
-};
+}
 
 export interface Bundle {
     deviceId: number,
@@ -59,11 +66,21 @@ export class MessageManager {
         this._sessionManager = sessionManager;
     }
 
-    async encryptMessage(jid: string, plaintext: string): Promise<EncryptedMessage> {
-        const sid = parseInt(this._sessionManager.Store.get(DEVICE_ID)!);
-        const deviceIds = this._sessionManager.deviceIdsFor(jid);
-        const keys: Array<Key> = [];
+    private async encryptKey(jid: string, deviceId: number, key: CryptoKey, length: number, encryptedText: ArrayBuffer): Promise<Key> {
+        const tag = encryptedText.slice(length),
+        exported_key = await crypto.subtle.exportKey('raw', key),
+        key_tag = DataUtils.arrayBufferToBase64String(DataUtils.appendArrayBuffer(exported_key, tag)),
+        encryptedKey = this._sessionManager.encryptKey(key_tag, jid, deviceId);
 
+        return {
+            jid,
+            key_base64: (encryptedKey as any).body,
+            rid: deviceId,
+            type: (encryptedKey as any).type
+        };
+    }
+
+    async encryptMessage(jid: string, plaintext: string): Promise<EncryptedMessage> {
         const iv = crypto.getRandomValues(new Uint8Array(12)),
         key = await crypto.subtle.generateKey(KEY_ALGO, true, ['encrypt', 'decrypt']),
         algo = {
@@ -75,22 +92,26 @@ export class MessageManager {
         length = encrypted.byteLength - ((128 + 7) >> 3),
         ciphertext = encrypted.slice(0, length);
 
+        const deviceIds = this._sessionManager.deviceIdsFor(jid);
+        const keys: Array<Key> = [];
+
         for(let i in deviceIds) {
-            const tag = encrypted.slice(length),
-            exported_key = await crypto.subtle.exportKey('raw', key),
-            key_tag = DataUtils.arrayBufferToBase64String(DataUtils.appendArrayBuffer(exported_key, tag)),
-            encryptedKey = this._sessionManager.encryptKey(key_tag, jid, deviceIds[i]);
-
-            keys.push({
-                key_base64: (encryptedKey as any).body,
-                rid: deviceIds[i],
-                type: (encryptedKey as any).type
-            });
-
+            keys.push(await this.encryptKey(jid, deviceIds[i], key, length, encrypted));
         }
 
+        if(jid !== this._sessionManager.JID) {
+            const jidDeviceIds = this._sessionManager.deviceIdsFor(this._sessionManager.JID);
+
+            for(let i in jidDeviceIds) {
+                keys.push(await this.encryptKey(this._sessionManager.JID, jidDeviceIds[i], key, length, encrypted));
+            }
+        }
+
+        const sid = parseInt(this._sessionManager.Store.get(DEVICE_ID)!);
+
         return {
-            jid: this._sessionManager.JID,
+            to: jid,
+            from: this._sessionManager.JID,
             header: {
                 sid,
                 iv_base64: DataUtils.arrayBufferToBase64String(iv),
@@ -151,7 +172,6 @@ export class MessageManager {
     }
 }
 
-// TODO Need to manage a session per receiver, not one session for all!
 export class SessionManager {
     private _sessions: Map<string, Session> = new Map<string, Session>();
     private _account: Account;
@@ -160,6 +180,7 @@ export class SessionManager {
     private _deviceId: number;
     private _jid: string;
     private _pickledAccountId: number;
+    private _devices: Array<Device> = [];
 
     constructor(jid: string, storeName: string) {
         this._jid = jid;
@@ -230,9 +251,22 @@ export class SessionManager {
         }
     }
 
+    updateDeviceIds(jid: string, deviceIds: Array<number>) {
+        const freshDeviceList = this._devices.filter(x => x.jid !== jid);
+        const devicesToUpdate = jid !== this.JID ? deviceIds.filter(x => x !== this.DeviceId) : deviceIds;
+
+        for(let i in devicesToUpdate) {
+            freshDeviceList.push({
+                id: devicesToUpdate[i],
+                jid
+            })
+        }
+        
+        this._devices = freshDeviceList;
+    }
+
     deviceIdsFor(jid: string): Array<number> {
-        const deviceIds = this.Store.itemsContaining(`${PICKLED_SESSION_PREFIX}${jid}`);
-        return deviceIds.map(x => parseInt(x.match(/[^/]+$/)![0]));
+        return this._devices.filter(x => x.jid === jid).map(x => x.id);
     }
 
     session(jid: string, deviceId: number): Session | null {
@@ -246,12 +280,14 @@ export class SessionManager {
 
     encryptKey(key: string, jid: string, deviceId: number) {
         const session = this.session(jid, deviceId)!;
+        //TODO if session is null we need to create one right? or should we do this before this point?
         const encrypted = session.encrypt(key);
         this.pickleSession(jid, deviceId, session);
         return encrypted;
     }
 
     //TODO decrypt key from rid key
+    //Get devices for each device from recipient and create a session for each if one doesn't exist
     async decryptKey(encryptedMessage: EncryptedMessage): Promise<string> {
         const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId)!;
 
@@ -259,18 +295,18 @@ export class SessionManager {
             throw new Error('No key found for this device');
         }
 
-        let session = this.session(encryptedMessage.jid, encryptedMessage.header.sid)!;
+        let session = this.session(encryptedMessage.from, encryptedMessage.header.sid)!;
 
         if (!session && key.type === 0) {
-            session = await this.initialiseInboundSession(encryptedMessage);
+            session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
 
             if(!session.matches_inbound(key.key_base64)) {
-                throw new Error('Something went wrong establishing a new session');
+                throw new Error('Something went wrong establishing an inbound session');
             }
         }
 
         const decrypted = session.decrypt(key.type, key.key_base64);
-        this.pickleSession(encryptedMessage.jid, encryptedMessage.header.sid, session);
+        this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, session);
         return decrypted;
     }
 
@@ -328,7 +364,7 @@ export class SessionManager {
     }
 
     private async initialiseInboundSession(keyExchangeMessage: EncryptedMessage): Promise<Session> {
-        const session = this.createSession(keyExchangeMessage.jid, keyExchangeMessage.header.sid);
+        const session = this.createSession(keyExchangeMessage.from, keyExchangeMessage.header.sid);
         const key = keyExchangeMessage.header.keys.find(x => x.rid === this.DeviceId)!;
 
         session.create_inbound(this._account, key.key_base64);
@@ -339,9 +375,9 @@ export class SessionManager {
         this._account.generate_one_time_keys(1);
         //this._account.mark_keys_as_published(); //see generatedPreKeyBundle
 
-        this._sessions.set(`${keyExchangeMessage.jid}/${keyExchangeMessage.header.sid}`, session);
+        this._sessions.set(`${keyExchangeMessage.from}/${keyExchangeMessage.header.sid}`, session);
         this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));  
-        this.pickleSession(keyExchangeMessage.jid, keyExchangeMessage.header.sid, session);
+        this.pickleSession(keyExchangeMessage.from, keyExchangeMessage.header.sid, session);
 
         return session;
     }
@@ -362,7 +398,7 @@ export class SessionManager {
          //TODO PreKey management
          // - refill keys after one time use
          //storePrekey used, does the sender or receiver store this?
-        const otk_id = bundle.prekeys[crypto.getRandomValues(new Uint32Array(1))[0] % 5];
+        const otk_id = bundle.prekeys[crypto.getRandomValues(new Uint32Array(1))[0] % bundle.prekeys.length];
 
         console.log(chalk.blue(`${this._jid} gets ${jid}/${bundle.deviceId}'s prekey: ${otk_id.key}`));
 
