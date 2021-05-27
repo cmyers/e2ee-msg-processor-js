@@ -1,6 +1,7 @@
 import { init as olmInit } from 'olm';
-import { EncryptedMessage, MessageManager, SessionManager } from './olm-omemo';
+import { EncryptedMessage, MessageManager } from './MessageManager';
 import chalk from 'chalk';
+import { SessionManager } from './SessionManager';
 
 (async () => {
     await olmInit();
@@ -15,7 +16,7 @@ import chalk from 'chalk';
 
     const bob2SessionManager = new SessionManager('bob', 'bob2');
     const bob2MsgManager = new MessageManager(bob2SessionManager);
-    
+
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's deviceIds: ${JSON.stringify([bobSessionManager.DeviceId, bob2SessionManager.DeviceId])}`));
     aliceSessionManager.updateDeviceIds(bobSessionManager.JID, [bobSessionManager.DeviceId, bob2SessionManager.DeviceId]);
 
@@ -27,7 +28,7 @@ import chalk from 'chalk';
 
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Alice's deviceIds: ${JSON.stringify([alice2SessionManager.DeviceId])}`));
     aliceSessionManager.updateDeviceIds(alice2SessionManager.JID, [alice2SessionManager.DeviceId]);
-    
+
     const alice2sBundle = alice2SessionManager.generatePreKeyBundle();
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Alice2's bundle: ${JSON.stringify(alice2sBundle)}`));
 
