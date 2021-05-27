@@ -12,6 +12,7 @@ const TAG_LENGTH = 128;
 //storage constants
 const PICKLED_ACCOUNT_ID = 'pickledAccountId';
 const DEVICE_ID = 'deviceId';
+const DEVICEIDS_PREFIX = 'deviceids/'
 const PICKLED_SESSION_KEY_PREFIX = 'pickledSessionKey/';
 const PICKLED_SESSION_PREFIX = 'pickledSession/';
 const PICKLED_ACCOUNT = 'pickledAccount';
@@ -261,12 +262,21 @@ export class SessionManager {
                 jid
             })
         }
-        
+
+        this._store.set(`${DEVICEIDS_PREFIX}${jid}`, JSON.stringify(devicesToUpdate));
         this._devices = freshDeviceList;
     }
 
     deviceIdsFor(jid: string): Array<number> {
-        return this._devices.filter(x => x.jid === jid).map(x => x.id);
+        let devices = this._devices.filter(x => x.jid === jid).map(x => x.id);
+        if(devices.length === 0) {
+            const deviceIds = this._store.get(`${DEVICEIDS_PREFIX}${jid}`)!;
+            devices = JSON.parse(deviceIds);
+            this.updateDeviceIds(jid, devices);
+            return devices;
+        }
+        return devices;
+
     }
 
     session(jid: string, deviceId: number): Session | null {
