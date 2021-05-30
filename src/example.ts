@@ -65,14 +65,21 @@ import { SessionManager } from './SessionManager';
     bobSessionManager.updateDeviceIds(aliceSessionManager.JID, [aliceSessionManager.DeviceId, alice2SessionManager.DeviceId]);
     bob2SessionManager.updateDeviceIds(aliceSessionManager.JID, [aliceSessionManager.DeviceId, alice2SessionManager.DeviceId]);
 
-    let aliceCounter = 0;
-    let bobCounter = 0;
+    let aliceCounter = parseInt(aliceSessionManager.Store.get('messagesSent')!);
+    if(isNaN(aliceCounter)) {
+        aliceCounter = 0;
+    }
+    let bobCounter = parseInt(bobSessionManager.Store.get('messagesSent')!);
+    if(isNaN(bobCounter)) {
+        bobCounter = 0;
+    }
 
     setInterval(async () => {
         let toSend = `messageToBobFromAlice${aliceCounter++}`;
 
         console.log(chalk.red(`alice Encrypts: ${toSend}`));
         let encryptedMessage = await aliceMsgManager.encryptMessage('bob', toSend);
+        aliceSessionManager.Store.set('messagesSent', aliceCounter);
 
         let plaintext = null;
         console.log(chalk.rgb(255, 191, 0)(`alice2 receives from alice: ${JSON.stringify(encryptedMessage)}`));
@@ -105,6 +112,7 @@ import { SessionManager } from './SessionManager';
 
         console.log(chalk.red(`bob Encrypts: ${toSend}`));
         encryptedMessage = await bobMsgManager.encryptMessage('alice', toSend);
+        bobSessionManager.Store.set('messagesSent', bobCounter);
 
         plaintext = null;
         console.log(chalk.rgb(255, 191, 0)(`alice receives from bob: ${JSON.stringify(encryptedMessage)}`));
