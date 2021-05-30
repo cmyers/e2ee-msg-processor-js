@@ -1,4 +1,4 @@
-import { init as olmInit } from 'olm';
+import { init as olmInit } from '@matrix-org/olm';
 import { EncryptedMessage, MessageManager } from './MessageManager';
 import chalk from 'chalk';
 import { SessionManager } from './SessionManager';

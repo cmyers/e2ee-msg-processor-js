@@ -1,4 +1,4 @@
-import { Account, Session, Utility } from 'olm';
+import { Account, Session, Utility } from '@matrix-org/olm';
 import { LocalStorageStore } from './store';
 import chalk from 'chalk';
 import { Bundle, EncryptedMessage } from './MessageManager';
