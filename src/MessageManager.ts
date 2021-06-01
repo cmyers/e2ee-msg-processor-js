@@ -34,17 +34,7 @@ export interface EncryptedMessage {
     payload_base64: string
 }
 
-export interface Bundle {
-    deviceId: number,
-    ik: string;
-    spks: string;
-    spkId: number;
-    spk: string;
-    prekeys: Array<{
-        id: number;
-        key: any;
-    }>;
-}
+
 
 export class MessageManager {
     private _sessionManager: SessionManager;

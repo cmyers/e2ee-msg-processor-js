@@ -1,7 +1,7 @@
 import { Account, Session, Utility } from '@matrix-org/olm';
 import { LocalStorageStore } from './store';
 import chalk from 'chalk';
-import { Bundle, EncryptedMessage } from './MessageManager';
+import { EncryptedMessage } from './MessageManager';
 import { Crypto } from "@peculiar/webcrypto";
 
 const crypto = new Crypto();
@@ -18,9 +18,21 @@ const PICKLED_SESSION_PREFIX = 'pickledSession/';
 const PICKLED_ACCOUNT = 'pickledAccount';
 const IDENTITY_PREFIX = 'identity/';
 const IDENTITY_KEY = 'identityKey';
+const PUBLISHED_PREKEYS = 'published_prekeys';
 const PREKEYS = 100;
 
-export module OmemoOlm {
+interface PreKey {
+    id: number,
+    key: string
+}
+
+export interface Bundle {
+    deviceId: number,
+    ik: string;
+    spks: string;
+    spkId: number;
+    spk: string;
+    prekeys: Array<PreKey>
 }
 
 export const DEVICE_ID = 'deviceId';
@@ -34,6 +46,7 @@ export class SessionManager {
     private _jid: string;
     private _pickledAccountId: number;
     private _devices: Array<Device> = [];
+    private _preKeys: Array<PreKey>;
 
     constructor(jid: string, storeName: string) {
         this._jid = jid;
@@ -42,6 +55,7 @@ export class SessionManager {
 
         this._pickledAccountId = parseInt(this._store.get(PICKLED_ACCOUNT_ID)!);
         this._deviceId = parseInt(this._store.get(DEVICE_ID)!);
+        this._preKeys = JSON.parse(this._store.get(PUBLISHED_PREKEYS)!);
 
         const pickledAccount = this._store.get(PICKLED_ACCOUNT);
 
@@ -61,26 +75,20 @@ export class SessionManager {
         this._store.set(IDENTITY_KEY, this._idKey);
     }
 
-    // private refillPreKeys(bundle: Bundle, session: Session): Bundle {
-    //     const test = this._account.remove_one_time_keys(session);
-    //     this._account.generate_one_time_keys(1);
-    //     //bundle.prekeys.map
-    //     this._account.mark_keys_as_published();
-    //     return bundle;
-    // }
-
-    // The first thing that needs to happen if a client wants to
-    // start using OMEMO is they need to generate an IdentityKey
-    // and a Device ID. The IdentityKey is a Curve25519 [6]
-    // public/private Key pair. The Device ID is a randomly
-    // generated integer between 1 and 2^31 - 1.
-
-    // Handle regenerating used keys
+    private updateOneTimeKeys() {
+        const oneTimePreKeys = JSON.parse(this._account.one_time_keys()).curve25519;
+        this._preKeys = Object.keys(oneTimePreKeys).map((x, i) => {
+            return {
+                id: i,
+                key: oneTimePreKeys[x]
+            }
+        });
+        this._store.set(PUBLISHED_PREKEYS, JSON.stringify(this._preKeys));
+    }
     generatePreKeyBundle(): Bundle {
         const randomIds = crypto.getRandomValues(new Uint32Array(2));
         const signedPreKeyId = randomIds[0];
         this._account.generate_one_time_keys(PREKEYS);
-        const oneTimePreKeys = JSON.parse(this._account.one_time_keys()).curve25519;
         const signature = this._account.sign(signedPreKeyId + this._idKey);
 
         // TODO CLARIFY:
@@ -89,19 +97,16 @@ export class SessionManager {
         //this logic needs to be checked, as we might not want to publish another bundle, only replace used keys and publish
         //this._account.mark_keys_as_published();
 
+        this.updateOneTimeKeys();
+
         return {
             deviceId: this._deviceId,
             ik: this._idKey,
             spks: signature,
             spkId: signedPreKeyId,
             spk: JSON.parse(this._account.identity_keys()).ed25519,
-            prekeys: Object.keys(oneTimePreKeys).map((x, i) => {
-                return {
-                    id: i,
-                    key: oneTimePreKeys[x]
-                }
-            })
-        }
+            prekeys: this._preKeys
+        };
     }
 
     updateDeviceIds(jid: string, deviceIds: Array<number>) {
@@ -158,6 +163,8 @@ export class SessionManager {
         }
 
         let session = this.session(encryptedMessage.from, encryptedMessage.header.sid)!;
+
+        //TO CHECK session.has_received_message() usage
 
         if (!session && key.type === 0) {
             session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
@@ -230,13 +237,11 @@ export class SessionManager {
         const key = keyExchangeMessage.header.keys.find(x => x.rid === this.DeviceId)!;
 
         session.create_inbound(this._account, key.key_base64);
-        //TODO get identity from bundle for the device id if we don't have it yet!
-        //session.create_inbound_from(this._account, idkey from sender's device bundle, keyExchangeMessage.key_base64);
 
         this._account.remove_one_time_keys(session);
         this._account.generate_one_time_keys(1);
-        //this._account.mark_keys_as_published(); //see generatedPreKeyBundle
-
+        this.updateOneTimeKeys();
+        
         this._sessions.set(`${keyExchangeMessage.from}/${keyExchangeMessage.header.sid}`, session);
         this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
         this.pickleSession(keyExchangeMessage.from, keyExchangeMessage.header.sid, session);
@@ -257,9 +262,6 @@ export class SessionManager {
         // TODO implement isTrusted
         this._store.set(`${IDENTITY_PREFIX}${jid}/${bundle.deviceId}`, bundle.ik);
 
-        //TODO PreKey management
-        // - refill keys after one time use
-        //storePrekey used, does the sender or receiver store this?
         const otk_id = bundle.prekeys[crypto.getRandomValues(new Uint32Array(1))[0] % bundle.prekeys.length];
 
         console.log(chalk.blue(`${this._jid} gets ${jid}/${bundle.deviceId}'s prekey: ${otk_id.key}`));
