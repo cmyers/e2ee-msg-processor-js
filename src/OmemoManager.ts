@@ -1,4 +1,4 @@
-import { EncryptedMessage, MessageProcessor } from "./MessageManager";
+import { EncryptedMessage, MessageProcessor } from "./MessageProcessor";
 import { Bundle, SessionManager } from "./SessionManager";
 
 export class OmemoManager {

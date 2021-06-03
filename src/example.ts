@@ -1,5 +1,5 @@
 import { init as olmInit } from '@matrix-org/olm';
-import { EncryptedMessage, MessageProcessor } from './MessageManager';
+import { EncryptedMessage, MessageProcessor } from './MessageProcessor';
 import chalk from 'chalk';
 import { SessionManager } from './SessionManager';
 import { OmemoManager } from './OmemoManager';

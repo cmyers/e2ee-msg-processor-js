@@ -1,7 +1,7 @@
 import { Account, Session, Utility } from '@matrix-org/olm';
 import { LocalStorageStore } from './store';
 import chalk from 'chalk';
-import { EncryptedMessage } from './MessageManager';
+import { EncryptedMessage } from './MessageProcessor';
 import { Crypto } from "@peculiar/webcrypto";
 
 const crypto = new Crypto();
