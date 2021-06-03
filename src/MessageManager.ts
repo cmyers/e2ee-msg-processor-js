@@ -36,7 +36,7 @@ export interface EncryptedMessage {
 
 
 
-export class MessageManager {
+export class MessageProcessor {
     private _sessionManager: SessionManager;
 
     constructor(sessionManager: SessionManager) {
@@ -121,10 +121,16 @@ export class MessageManager {
     //TODO keep copy of last message sent in case of client decryption failure and session-re-establish attempt
     //TODO Message Carbons - XMPP layer?
     //TODO Message Archive - XMPP layer? 
-    async processMessage(message: EncryptedMessage): Promise<string | null> {
+    async processMessage(encryptedMessage: EncryptedMessage): Promise<string | null> {
         try {
-            const decryptedKey = await this._sessionManager.decryptKey(message);
-            return await this.decryptMessage(message, decryptedKey);
+            const decryptedKey = await this._sessionManager.decryptKey(encryptedMessage);
+            const deviceIds = this._sessionManager.deviceIdsFor(encryptedMessage.from);
+
+            if(!deviceIds.some(x => x === encryptedMessage.header.sid)) {
+                this._sessionManager.updateDeviceIds(encryptedMessage.from, [encryptedMessage.header.sid]);
+            }
+
+            return await this.decryptMessage(encryptedMessage, decryptedKey);
         } catch {
             //TODO log error?
             //TODO establish new session and send an error control message?

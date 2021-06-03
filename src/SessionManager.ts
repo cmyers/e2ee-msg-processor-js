@@ -109,19 +109,22 @@ export class SessionManager {
         };
     }
 
+    //TODO add device if we don't have it (except our own?)
     updateDeviceIds(jid: string, deviceIds: Array<number>) {
-        const freshDeviceList = this._devices.filter(x => x.jid !== jid);
-        const devicesToUpdate = jid !== this.JID ? deviceIds.filter(x => x !== this.DeviceId) : deviceIds;
+        deviceIds.forEach(newDeviceId => {
+            if(!this._devices.some(x => x.jid === jid && newDeviceId === x.id)) {
+                this._devices.push({
+                    id: newDeviceId,
+                    jid
+                })
+            }
+        });
 
-        for (let i in devicesToUpdate) {
-            freshDeviceList.push({
-                id: devicesToUpdate[i],
-                jid
-            })
+        const devicesToUpdate = this._devices.filter(x => x.jid === jid);
+
+        if(devicesToUpdate.length > 0) {
+            this._store.set(`${DEVICEIDS_PREFIX}${jid}`, JSON.stringify(devicesToUpdate.map(x => x.id)));
         }
-
-        this._store.set(`${DEVICEIDS_PREFIX}${jid}`, JSON.stringify(devicesToUpdate));
-        this._devices = freshDeviceList;
     }
 
     deviceIdsFor(jid: string): Array<number> {
@@ -129,14 +132,16 @@ export class SessionManager {
         if (devices.length === 0) {
             const deviceIds = this._store.get(`${DEVICEIDS_PREFIX}${jid}`)!;
             devices = JSON.parse(deviceIds);
-            this.updateDeviceIds(jid, devices);
-            return devices;
+            if(devices?.length > 0) {
+                this.updateDeviceIds(jid, devices);
+            }
+            return devices ? devices : [];
         }
         return devices;
 
     }
 
-    session(jid: string, deviceId: number): Session | null {
+    getSession(jid: string, deviceId: number): Session | null {
         let session = this._sessions.get(`${jid}/${deviceId}`);
 
         if (!session) {
@@ -146,7 +151,7 @@ export class SessionManager {
     }
 
     encryptKey(key: string, jid: string, deviceId: number) {
-        const session = this.session(jid, deviceId)!;
+        const session = this.getSession(jid, deviceId)!;
         //TODO if session is null we need to create one right? or should we do this before this point?
         const encrypted = session.encrypt(key);
         this.pickleSession(jid, deviceId, session);
@@ -162,11 +167,11 @@ export class SessionManager {
             throw new Error('No key found for this device');
         }
 
-        let session = this.session(encryptedMessage.from, encryptedMessage.header.sid)!;
+        let session = this.getSession(encryptedMessage.from, encryptedMessage.header.sid)!;
 
         //TO CHECK session.has_received_message() usage
 
-        if (!session && key.type === 0) {
+        if (!session || !session.has_received_message() && key.type === 0) {
             session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
 
             if (!session.matches_inbound(key.key_base64)) {
@@ -249,7 +254,7 @@ export class SessionManager {
         return session;
     }
 
-    async initialiseOutboundSession(jid: string, bundle: Bundle): Promise<Session> {
+    initialiseOutboundSession(jid: string, bundle: Bundle) {
 
         if (!this.verifyBundle(bundle)) {
             throw new Error('Bundle verification failed');
@@ -273,8 +278,6 @@ export class SessionManager {
         this._sessions.set(`${jid}/${bundle.deviceId}`, session);
         this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
         this.pickleSession(jid, bundle.deviceId, session);
-
-        return session;
     }
 
     private async verifyBundle(bundle: Bundle): Promise<boolean> {
