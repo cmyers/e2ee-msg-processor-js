@@ -111,20 +111,17 @@ export class SessionManager {
 
     //TODO add device if we don't have it (except our own?)
     updateDeviceIds(jid: string, deviceIds: Array<number>) {
+        const newDeviceList = this._devices.filter(x => x.jid !== jid);
+
         deviceIds.forEach(newDeviceId => {
-            if(!this._devices.some(x => x.jid === jid && newDeviceId === x.id)) {
-                this._devices.push({
-                    id: newDeviceId,
-                    jid
-                })
-            }
+            newDeviceList.push({
+                id: newDeviceId,
+                jid
+            })
         });
 
-        const devicesToUpdate = this._devices.filter(x => x.jid === jid);
-
-        if(devicesToUpdate.length > 0) {
-            this._store.set(`${DEVICEIDS_PREFIX}${jid}`, JSON.stringify(devicesToUpdate.map(x => x.id)));
-        }
+        this._devices = newDeviceList;
+        this._store.set(`${DEVICEIDS_PREFIX}${jid}`, JSON.stringify(deviceIds));
     }
 
     deviceIdsFor(jid: string): Array<number> {
