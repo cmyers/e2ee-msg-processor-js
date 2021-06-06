@@ -1,13 +1,21 @@
+import EventEmitter from "events";
 import { EncryptedMessage, MessageProcessor } from "./MessageProcessor";
 import { Bundle, SessionManager } from "./SessionManager";
 
 export class OmemoManager {
     private _sessionManager: SessionManager;
     private _messageManager: MessageProcessor;
+    private readonly _sessionEvents = new EventEmitter();
 
     constructor(jid: string, storeName: string) {
         this._sessionManager = new SessionManager(jid, storeName);
         this._messageManager = new MessageProcessor(this._sessionManager);
+        
+    }
+
+    onDecryptFailed(cb: Function) {
+        this._sessionEvents.removeAllListeners();
+        this._sessionEvents.on('requestNewSession', (jid) => cb(jid));
     }
 
     generateBundle(): Bundle {
@@ -18,8 +26,33 @@ export class OmemoManager {
         return this._messageManager.encryptMessage(to, plainText);
     }
 
-    decryptMessage(encryptedMessage: EncryptedMessage): Promise<string | null> {
-        return this._messageManager.processMessage(encryptedMessage);
+    async decryptMessage(encryptedMessage: EncryptedMessage): Promise<string | null> {
+        //TODO log error?
+        //TODO establish new session and send an error control message?
+
+        // TODO handle OLM.BAD_MESSAGE_MAC error through try and catch
+        // TODO from the XEP:
+        // There are various reasons why decryption of an
+        // OMEMOKeyExchange or an OMEMOAuthenticatedMessage
+        // could fail. One reason is if the message was
+        // received twice and already decrypted once, in this
+        // case the client MUST ignore the decryption failure
+        // and not show any warnings/errors. In all other cases
+        // of decryption failure, clients SHOULD respond by
+        // forcibly doing a new key exchange and sending a new
+        // OMEMOKeyExchange with a potentially empty SCE
+        // payload. By building a new session with the original
+        // sender this way, the invalid session of the original
+        // sender will get overwritten with this newly created,
+        // valid session.
+        try {
+            return await this._messageManager.processMessage(encryptedMessage);
+        } catch(e) {
+            console.log(e);
+            this._sessionEvents.emit('requestNewSession', encryptedMessage.from);
+            return null;
+        }
+        
     }
 
     processDevices(jid: string, bundles: Array<Bundle>) {
@@ -28,7 +61,7 @@ export class OmemoManager {
         bundles.forEach(bundle => {
             this._sessionManager.initialiseOutboundSession(jid, bundle);
         });
-
+        
     }
 
     hasSession(jid: string, deviceId: number): boolean {
@@ -39,11 +72,11 @@ export class OmemoManager {
         return this._sessionManager.DeviceId;
     }
 
-    get(key: string) {
+    getValue(key: string) {
         return this._sessionManager.Store.get(key);
     }
 
-    set(key: string, value: string | number) {
+    setValue(key: string, value: string | number) {
         this._sessionManager.Store.set(key, value);
     }
 }

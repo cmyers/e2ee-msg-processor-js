@@ -158,30 +158,36 @@ export class SessionManager {
         return encrypted;
     }
 
-    //TODO decrypt key from rid key
+    // TODO Use events to trigger sending messages when required?
     //Get devices for each device from recipient and create a session for each if one doesn't exist
-    async decryptKey(encryptedMessage: EncryptedMessage): Promise<string> {
+    async decryptKey(encryptedMessage: EncryptedMessage): Promise<string | null> {
         const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId)!;
 
-        if (key === null) {
-            throw new Error('No key found for this device');
+        if (key == null) {
+            return null; // This is not meant for this device so ignore it
         }
 
         let session = this.getSession(encryptedMessage.from, encryptedMessage.header.sid)!;
-
-        //TO CHECK session.has_received_message() usage
-
-        if (!session || !session.has_received_message() && key.type === 0) {
-            session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
-
-            if (!session.matches_inbound(key.key_base64)) {
-                throw new Error('Something went wrong establishing an inbound session');
+        
+        try {
+            const decrypted = session.decrypt(key.type, key.key_base64);
+            this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, session);
+            return decrypted;
+        } catch(e) {
+            //if sender has lost original session they create a new session. Or can happen if receiver's session is corrupt or missing. Correct only works if sender loses session. This is ugly. Use events to trigger what happens?
+            //receiver needs to acknowledge the session success by sending a message back, this is to be implemented in the example for now, however could possibly be driven by events?
+            if (key.type === 0) {
+                session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
+    
+                if (!session.matches_inbound(key.key_base64)) {
+                    throw new Error('Something went wrong establishing an inbound session');
+                }
+                
+                return this.decryptKey(encryptedMessage);
+            } else {
+                throw e; //TODO We can't handle this here, so we need to throw the error for the client to re-establish a new session. Emit an event for the client to do this? It will need the latest bundle and new prekey
             }
         }
-
-        const decrypted = session.decrypt(key.type, key.key_base64);
-        this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, session);
-        return decrypted;
     }
 
     get Account(): Account {

@@ -34,8 +34,6 @@ export interface EncryptedMessage {
     payload_base64: string
 }
 
-
-
 export class MessageProcessor {
     private _sessionManager: SessionManager;
 
@@ -122,35 +120,18 @@ export class MessageProcessor {
     //TODO Message Carbons - XMPP layer?
     //TODO Message Archive - XMPP layer? 
     async processMessage(encryptedMessage: EncryptedMessage): Promise<string | null> {
-        try {
-            const decryptedKey = await this._sessionManager.decryptKey(encryptedMessage);
-            const deviceIds = this._sessionManager.deviceIdsFor(encryptedMessage.from);
+        const decryptedKey = await this._sessionManager.decryptKey(encryptedMessage);
 
-            if(!deviceIds.some(x => x === encryptedMessage.header.sid)) {
-                this._sessionManager.updateDeviceIds(encryptedMessage.from, [encryptedMessage.header.sid]);
-            }
-
-            return await this.decryptMessage(encryptedMessage, decryptedKey);
-        } catch {
-            //TODO log error?
-            //TODO establish new session and send an error control message?
-
-            // TODO handle OLM.BAD_MESSAGE_MAC error through try and catch
-            // TODO from the XEP:
-            // There are various reasons why decryption of an
-            // OMEMOKeyExchange or an OMEMOAuthenticatedMessage
-            // could fail. One reason is if the message was
-            // received twice and already decrypted once, in this
-            // case the client MUST ignore the decryption failure
-            // and not show any warnings/errors. In all other cases
-            // of decryption failure, clients SHOULD respond by
-            // forcibly doing a new key exchange and sending a new
-            // OMEMOKeyExchange with a potentially empty SCE
-            // payload. By building a new session with the original
-            // sender this way, the invalid session of the original
-            // sender will get overwritten with this newly created,
-            // valid session.
+        if(!decryptedKey) {
             return null;
         }
+
+        const deviceIds = this._sessionManager.deviceIdsFor(encryptedMessage.from);
+
+        if(!deviceIds.some(x => x === encryptedMessage.header.sid)) {
+            this._sessionManager.updateDeviceIds(encryptedMessage.from, [encryptedMessage.header.sid]);
+        }
+
+        return await this.decryptMessage(encryptedMessage, decryptedKey);
     }
 }
