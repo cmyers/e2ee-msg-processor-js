@@ -139,7 +139,7 @@ export class SessionManager {
     }
 
     getSession(jid: string, deviceId: number): Session | null {
-        let session = this._sessions.get(`${jid}/${deviceId}`);
+        const session = this._sessions.get(`${jid}/${deviceId}`);
 
         if (!session) {
             return this.loadSession(jid, deviceId);
