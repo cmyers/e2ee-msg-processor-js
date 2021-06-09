@@ -18,11 +18,11 @@
     "e2e encryption"
   ],
   "scripts": {
-    "build": "tsc",
+    "build": "webpack",
     "test": "echo \"Error: no test specified\" && exit 1",
-    "minify": "uglifyjs --compress --mangle --output ./dist/index.min.js -- ./dist/index.js",
     "lint": "eslint . --ext .ts",
-    "start": "node .\\dist\\example.js"
+    "start": "node .\\dist\\example.bundle.js",
+    "build+start": "npm run build & npm run start"
   },
   "author": "Chris Myers",
   "license": "MIT",
@@ -35,8 +35,11 @@
     "@typescript-eslint/eslint-plugin": "^4.26.0",
     "@typescript-eslint/parser": "^4.26.0",
     "eslint": "~7.28.0",
+    "ts-loader": "^9.2.3",
     "typescript": "~4.3.2",
-    "uglify-js": "~3.13.9"
+    "webpack": "^5.38.1",
+    "webpack-cli": "^4.7.2",
+    "webpack-node-externals": "^3.0.0"
   },
   "dependencies": {
     "@matrix-org/olm": "~3.2.4",
