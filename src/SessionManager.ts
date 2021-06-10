@@ -35,6 +35,11 @@ export interface Bundle {
     prekeys: Array<PreKey>
 }
 
+export interface EncryptedKey {
+    body: string,
+    type: number
+}
+
 export const DEVICE_ID = 'deviceId';
 
 export class SessionManager {
@@ -46,28 +51,30 @@ export class SessionManager {
     private _jid: string;
     private _pickledAccountId: number;
     private _devices: Array<Device> = [];
-    private _preKeys: Array<PreKey>;
+    private _preKeys: Array<PreKey> = [];
 
     constructor(jid: string, storeName: string) {
         this._jid = jid;
         this._account = new Account();
         this._store = new LocalStorageStore(storeName);
 
-        this._pickledAccountId = parseInt(this._store.get(PICKLED_ACCOUNT_ID)!);
-        this._deviceId = parseInt(this._store.get(DEVICE_ID)!);
-        this._preKeys = JSON.parse(this._store.get(PUBLISHED_PREKEYS)!);
-
+        const pickledAccountId = this._store.get(PICKLED_ACCOUNT_ID);
+        const deviceId = this._store.get(DEVICE_ID);
+        const published_prekeys = this._store.get(PUBLISHED_PREKEYS);
         const pickledAccount = this._store.get(PICKLED_ACCOUNT);
 
-        if (pickledAccount && this._pickledAccountId && this._deviceId) {
+        if (pickledAccount && pickledAccountId && deviceId) {
+            this._pickledAccountId = parseInt(pickledAccountId);
+            this._deviceId = parseInt(deviceId);
+            this._preKeys = published_prekeys ? JSON.parse(published_prekeys) : [];
             this._account.unpickle(this._pickledAccountId.toString(), pickledAccount);
         } else {
             const randValues = crypto.getRandomValues(new Uint32Array(2));
             this._account.create();
             this._pickledAccountId = randValues[0];
             this._deviceId = randValues[1];
-            this._store.set(PICKLED_ACCOUNT_ID, this._pickledAccountId);
-            this._store.set(DEVICE_ID, this._deviceId);
+            this._store.set(PICKLED_ACCOUNT_ID, this._pickledAccountId.toString());
+            this._store.set(DEVICE_ID, this._deviceId.toString());
             this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
         }
 
@@ -110,7 +117,7 @@ export class SessionManager {
     }
 
     //TODO add device if we don't have it (except our own?)
-    updateDeviceIds(jid: string, deviceIds: Array<number>) {
+    updateDeviceIds(jid: string, deviceIds: Array<number>): void {
         const newDeviceList = this._devices.filter(x => x.jid !== jid);
 
         deviceIds.forEach(newDeviceId => {
@@ -127,15 +134,14 @@ export class SessionManager {
     deviceIdsFor(jid: string): Array<number> {
         let devices = this._devices.filter(x => x.jid === jid).map(x => x.id);
         if (devices.length === 0) {
-            const deviceIds = this._store.get(`${DEVICEIDS_PREFIX}${jid}`)!;
-            devices = JSON.parse(deviceIds);
+            const deviceIds = this._store.get(`${DEVICEIDS_PREFIX}${jid}`);
+            devices = deviceIds ? JSON.parse(deviceIds) : [];
             if(devices?.length > 0) {
                 this.updateDeviceIds(jid, devices);
             }
             return devices ? devices : [];
         }
         return devices;
-
     }
 
     getSession(jid: string, deviceId: number): Session | null {
@@ -147,26 +153,32 @@ export class SessionManager {
         return session;
     }
 
-    encryptKey(key: string, jid: string, deviceId: number) {
-        const session = this.getSession(jid, deviceId)!;
+    encryptKey(key: string, jid: string, deviceId: number): EncryptedKey {
+        const session = this.getSession(jid, deviceId);
         //TODO if session is null we need to create one right? or should we do this before this point?
+        if(!session) {
+            throw new Error(`Missing session for JID: ${jid} DeviceId: ${deviceId}`);
+        }
         const encrypted = session.encrypt(key);
         this.pickleSession(jid, deviceId, session);
-        return encrypted;
+        return encrypted as EncryptedKey;
     }
 
     // TODO Use events to trigger sending messages when required?
     //Get devices for each device from recipient and create a session for each if one doesn't exist
     async decryptKey(encryptedMessage: EncryptedMessage): Promise<string | null> {
-        const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId)!;
+        const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId);
 
         if (key == null) {
+            console.log("fuck 2");
             return null; // This is not meant for this device so ignore it
         }
 
-        let session = this.getSession(encryptedMessage.from, encryptedMessage.header.sid)!;
-        
         try {
+            const session = this.getSession(encryptedMessage.from, encryptedMessage.header.sid);
+            if(!session) {
+                throw new Error(`No session for JID: ${encryptedMessage.from} DeviceId: ${encryptedMessage.header.sid}`)
+            }
             const decrypted = session.decrypt(key.type, key.key_base64);
             this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, session);
             return decrypted;
@@ -174,10 +186,10 @@ export class SessionManager {
             //if sender has lost original session they create a new session. Or can happen if receiver's session is corrupt or missing. Correct only works if sender loses session. This is ugly. Use events to trigger what happens?
             //receiver needs to acknowledge the session success by sending a message back, this is to be implemented in the example for now, however could possibly be driven by events?
             if (key.type === 0) {
-                session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
-    
-                if (!session.matches_inbound(key.key_base64)) {
-                    throw new Error('Something went wrong establishing an inbound session');
+                const session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
+                
+                if (!session || !session.matches_inbound(key.key_base64)) {
+                    throw new Error(`Something went wrong establishing an inbound session: ${JSON.stringify(session)}`);
                 }
                 
                 return this.decryptKey(encryptedMessage);
@@ -204,7 +216,7 @@ export class SessionManager {
     }
 
     get IdentityKey(): string {
-        return this._idKey!;
+        return this._idKey;
     }
 
     private loadSession(jid: string, deviceId: number): Session | null {
@@ -213,11 +225,10 @@ export class SessionManager {
         const pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}`);
         const pickledSession = this._store.get(`${PICKLED_SESSION_PREFIX}${jid}/${deviceId}`);
 
-        if (pickledSession) {
+        if (pickledSessionKey && pickledSession) {
             console.log(chalk.blue(`Load ${this._jid}'s session with ${jid}/${deviceId}: ${pickledSession}`));
-            session.unpickle(pickledSessionKey!, pickledSession);
+            session.unpickle(pickledSessionKey, pickledSession);
             this._sessions.set(`${jid}/${deviceId}`, session);
-
             return session;
         }
         return null;
@@ -240,9 +251,13 @@ export class SessionManager {
         return session;
     }
 
-    private async initialiseInboundSession(keyExchangeMessage: EncryptedMessage): Promise<Session> {
+    private async initialiseInboundSession(keyExchangeMessage: EncryptedMessage): Promise<Session | null> {
         const session = this.createSession(keyExchangeMessage.from, keyExchangeMessage.header.sid);
-        const key = keyExchangeMessage.header.keys.find(x => x.rid === this.DeviceId)!;
+        const key = keyExchangeMessage.header.keys.find(x => x.rid === this.DeviceId);
+
+        if(!key) {
+            return null;
+        }
 
         session.create_inbound(this._account, key.key_base64);
 
@@ -257,7 +272,7 @@ export class SessionManager {
         return session;
     }
 
-    initialiseOutboundSession(jid: string, bundle: Bundle) {
+    initialiseOutboundSession(jid: string, bundle: Bundle): void {
 
         if (!this.verifyBundle(bundle)) {
             throw new Error('Bundle verification failed');

@@ -10,12 +10,11 @@ export class OmemoManager {
     constructor(jid: string, storeName: string) {
         this._sessionManager = new SessionManager(jid, storeName);
         this._messageManager = new MessageProcessor(this._sessionManager);
-        
     }
 
-    onDecryptFailed(cb: Function) {
+    onDecryptFailed(cb: (jid: string) => void): void {
         this._sessionEvents.removeAllListeners();
-        this._sessionEvents.on('requestNewSession', (jid) => cb(jid));
+        this._sessionEvents.on('requestNewSession', (jid: string) => cb(jid));
     }
 
     generateBundle(): Bundle {
@@ -55,7 +54,7 @@ export class OmemoManager {
         
     }
 
-    processDevices(jid: string, bundles: Array<Bundle>) {
+    processDevices(jid: string, bundles: Array<Bundle>): void {
         this._sessionManager.updateDeviceIds(jid, bundles.map(x => x.deviceId));
 
         bundles.forEach(bundle => {
@@ -72,11 +71,11 @@ export class OmemoManager {
         return this._sessionManager.DeviceId;
     }
 
-    getValue(key: string) {
+    getValue(key: string): string | null {
         return this._sessionManager.Store.get(key);
     }
 
-    setValue(key: string, value: string | number) {
+    setValue(key: string, value: string): void {
         this._sessionManager.Store.set(key, value);
     }
 }

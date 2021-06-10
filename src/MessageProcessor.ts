@@ -1,5 +1,5 @@
 
-import { Crypto } from "@peculiar/webcrypto";
+import { Crypto, CryptoKey } from "@peculiar/webcrypto";
 import { DataUtils } from './store';
 import { DEVICE_ID, SessionManager } from "./SessionManager";
 
@@ -24,14 +24,14 @@ interface Key {
 }
 
 export interface EncryptedMessage {
-    to: string,
+    to: string;
     from: string;
     header: {
-        sid: number
-        keys: Array<Key>,
-        iv_base64: string
-    },
-    payload_base64: string
+        sid: number;
+        keys: Array<Key>;
+        iv_base64: string;
+    };
+    payload_base64: string;
 }
 
 export class MessageProcessor {
@@ -49,9 +49,9 @@ export class MessageProcessor {
 
         return {
             jid,
-            key_base64: (encryptedKey as any).body,
+            key_base64: encryptedKey.body,
             rid: deviceId,
-            type: (encryptedKey as any).type
+            type: encryptedKey.type
         };
     }
 
@@ -70,25 +70,31 @@ export class MessageProcessor {
         const deviceIds = this._sessionManager.deviceIdsFor(jid);
         const keys: Array<Key> = [];
 
-        for(let i in deviceIds) {
+        for(const i in deviceIds) {
             keys.push(await this.encryptKey(jid, deviceIds[i], key, length, encrypted));
         }
 
         if(jid !== this._sessionManager.JID) {
             const jidDeviceIds = this._sessionManager.deviceIdsFor(this._sessionManager.JID);
 
-            for(let i in jidDeviceIds) {
+            for(const i in jidDeviceIds) {
                 keys.push(await this.encryptKey(this._sessionManager.JID, jidDeviceIds[i], key, length, encrypted));
             }
         }
 
-        const sid = parseInt(this._sessionManager.Store.get(DEVICE_ID)!);
+        const sid = this._sessionManager.Store.get(DEVICE_ID);
+
+        if(!sid) {
+            throw new Error("Sender device ID missing from store");
+        }
+
+        const sidParsed = parseInt(sid);
 
         return {
             to: jid,
             from: this._sessionManager.JID,
             header: {
-                sid,
+                sid: sidParsed,
                 iv_base64: DataUtils.arrayBufferToBase64String(iv),
                 keys
             },

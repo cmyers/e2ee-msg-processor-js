@@ -20,17 +20,17 @@ import { init as olmInit, InboundGroupSession, OutboundGroupSession } from '@mat
     // const charlieSessionManager = new SessionManager('charlie', 'charlie');
     // const charlieMsgManager = new MessageManager(charlieSessionManager);
 
-    var outbound_session = new OutboundGroupSession();
+    const outbound_session = new OutboundGroupSession();
     outbound_session.create();
 
     // exchange these over a secure channel
-    var session_key = outbound_session.session_key();
+    const session_key = outbound_session.session_key();
 
-    var inbound_session = new InboundGroupSession();
+    const inbound_session = new InboundGroupSession();
     inbound_session.create(session_key);
 
-    var ciphertext = outbound_session.encrypt("Hello");
-    var plaintext = inbound_session.decrypt(ciphertext);
+    const ciphertext = outbound_session.encrypt("Hello");
+    const plaintext = inbound_session.decrypt(ciphertext);
     console.log(plaintext);
 
 

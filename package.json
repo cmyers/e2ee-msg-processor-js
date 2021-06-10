@@ -2,7 +2,7 @@
   "name": "olm-omemo-ts",
   "version": "0.0.1",
   "description": "",
-  "main": "./dist/index.min.js",
+  "main": "./dist/example.bundle.js",
   "types": "dist",
   "files": [
     "dist",

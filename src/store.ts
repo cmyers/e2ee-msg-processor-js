@@ -31,7 +31,7 @@ export class LocalStorageStore {
     return this.localStorage.length > 0;
   }
 
-  get(key: string, default_ = null) {
+  get(key: string, default_ = null): string | null {
 
     const item = this.localStorage.getItem(key);
     //console.log('get: ', key);
@@ -48,15 +48,15 @@ export class LocalStorageStore {
     }
   }
 
-  set(key: string, value: any): void {
+  set(key: string, value: string): void {
     this.localStorage.setItem(key, value);
   }
 
-  remove(key: string) {
+  remove(key: string): void {
     return this.localStorage.removeItem(key);
   }
 
-  has(key: string) {
+  has(key: string): boolean {
     return this.localStorage.getItem(key) !== null;
   }
 }
@@ -72,9 +72,9 @@ export class DataUtils {
   }
 
   static bufferToArrayBuffer(buffer: Buffer): ArrayBuffer {
-    var ab = new ArrayBuffer(buffer.length);
-    var view = new Uint8Array(ab);
-    for (var i = 0; i < buffer.length; ++i) {
+    const ab = new ArrayBuffer(buffer.length);
+    const view = new Uint8Array(ab);
+    for (let i = 0; i < buffer.length; ++i) {
       view[i] = buffer[i];
     }
     return ab;
@@ -96,7 +96,7 @@ export class DataUtils {
     return Buffer.from(str, 'base64').toString('binary');
   }
 
-  static appendArrayBuffer = function (buffer1: ArrayBuffer, buffer2: ArrayBuffer) {
+  static appendArrayBuffer(buffer1: ArrayBuffer, buffer2: ArrayBuffer): ArrayBuffer {
     const tmp = new Uint8Array(buffer1.byteLength + buffer2.byteLength);
     tmp.set(new Uint8Array(buffer1), 0);
     tmp.set(new Uint8Array(buffer2), buffer1.byteLength);

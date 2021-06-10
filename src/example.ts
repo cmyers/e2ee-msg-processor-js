@@ -119,7 +119,7 @@ import { OmemoManager } from './OmemoManager';
 
         console.log(chalk.red(`alice Encrypts: ${toSend}`));
         let encryptedMessage = await aliceOmemoManager.encryptMessage('bob', toSend);
-        aliceOmemoManager.setValue('messagesSent', aliceCounter);
+        aliceOmemoManager.setValue('messagesSent', aliceCounter.toString());
 
         let plaintext = null;
         console.log(chalk.rgb(255, 191, 0)(`alice2 receives from alice: ${JSON.stringify(encryptedMessage)}`));
@@ -191,7 +191,7 @@ import { OmemoManager } from './OmemoManager';
 
         console.log(chalk.red(`bob Encrypts: ${toSend}`));
         encryptedMessage = await bobOmemoManager.encryptMessage('alice', toSend);
-        bobOmemoManager.setValue('messagesSent', bobCounter);
+        bobOmemoManager.setValue('messagesSent', bobCounter.toString());
 
         plaintext = null;
         console.log(chalk.rgb(255, 191, 0)(`alice receives from bob: ${JSON.stringify(encryptedMessage)}`));
