@@ -8,7 +8,7 @@ module.exports = {
   devtool: "source-map",
   externals: [nodeExternals()],
   entry: {
-    index: './src/OmemoManager.ts',
+    index: './src/index.ts',
     example: {
       dependOn: 'index',
       import: './src/example.ts'
