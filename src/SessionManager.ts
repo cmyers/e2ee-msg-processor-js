@@ -92,6 +92,7 @@ export class SessionManager {
         });
         this._store.set(PUBLISHED_PREKEYS, JSON.stringify(this._preKeys));
     }
+    
     generatePreKeyBundle(): Bundle {
         const randomIds = crypto.getRandomValues(new Uint32Array(2));
         const signedPreKeyId = randomIds[0];
