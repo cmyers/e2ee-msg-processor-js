@@ -64,7 +64,7 @@ export class MessageProcessor {
             'tagLength': TAG_LENGTH
         },
         encrypted = await crypto.subtle.encrypt(algo, key, DataUtils.stringToArrayBuffer(plaintext)),
-        length = encrypted.byteLength - ((128 + 7) >> 3),
+        length = encrypted.byteLength - 16,
         ciphertext = encrypted.slice(0, length);
 
         const deviceIds = this._sessionManager.deviceIdsFor(jid);
