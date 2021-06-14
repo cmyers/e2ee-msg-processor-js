@@ -1,4 +1,5 @@
 import EventEmitter from "events";
+import { init as olmInit } from '@matrix-org/olm';
 import { EncryptedMessage, MessageProcessor } from "./MessageProcessor";
 import { Bundle, SessionManager } from "./SessionManager";
 
@@ -10,6 +11,10 @@ export class OmemoManager {
     constructor(jid: string, storeName: string) {
         this._sessionManager = new SessionManager(jid, storeName);
         this._messageManager = new MessageProcessor(this._sessionManager);
+    }
+
+     static async init(): Promise<void> {
+        await olmInit();
     }
 
     onDecryptFailed(cb: (jid: string) => void): void {

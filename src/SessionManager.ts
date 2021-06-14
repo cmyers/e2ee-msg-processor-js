@@ -171,7 +171,6 @@ export class SessionManager {
         const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId);
 
         if (key == null) {
-            console.log("fuck 2");
             return null; // This is not meant for this device so ignore it
         }
 

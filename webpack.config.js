@@ -6,13 +6,11 @@ module.exports = {
   mode: 'development',
   target: 'node',
   devtool: "source-map",
+  externalsPresets: { node: true },
   externals: [nodeExternals()],
   entry: {
     index: './src/index.ts',
-    example: {
-      dependOn: 'index',
-      import: './src/example.ts'
-    },
+    example: './src/example.ts'
   },
   optimization: {
     splitChunks: {
@@ -35,6 +33,7 @@ module.exports = {
   output: {
     filename: '[name].js',
     path: path.resolve(__dirname, 'dist'),
-    clean: true
+    clean: true,
+    libraryTarget: 'umd'
   },
 };

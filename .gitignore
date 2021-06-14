@@ -5,3 +5,6 @@
 #vs
 /.vscode
 /.vs
+
+#build artefacts
+/*.tgz

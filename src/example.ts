@@ -1,11 +1,8 @@
-import { init as olmInit } from '@matrix-org/olm';
-import { EncryptedMessage } from './MessageProcessor';
 import chalk from 'chalk';
 import { OmemoManager } from './OmemoManager';
 
 (async () => {
-    await olmInit();
-
+    await OmemoManager.init();
     const aliceOmemoManager = new OmemoManager('alice', 'aliceStore');
     const alicesBundle = aliceOmemoManager.generateBundle();
     const alice2OmemoManager = new OmemoManager('alice', 'aliceStore2');
@@ -16,7 +13,7 @@ import { OmemoManager } from './OmemoManager';
         alice2OmemoManager.processDevices(jid, [alicesBundle]);
         const initialMessage = await alice2OmemoManager.encryptMessage(jid, '');
 
-        await aliceOmemoManager.decryptMessage(initialMessage as EncryptedMessage);
+        await aliceOmemoManager.decryptMessage(initialMessage);
         //acknowledge session sucesss
         const acknowledgement = await aliceOmemoManager.encryptMessage(jid, 'Success');
         await alice2OmemoManager.decryptMessage(acknowledgement);
@@ -53,7 +50,7 @@ import { OmemoManager } from './OmemoManager';
         aliceOmemoManager.processDevices('alice', [alice2sBundle]);
         const initialMessage = await aliceOmemoManager.encryptMessage('alice', '');
 
-        await alice2OmemoManager.decryptMessage(initialMessage as EncryptedMessage);
+        await alice2OmemoManager.decryptMessage(initialMessage);
         //acknowledge session sucesss
         const acknowledgement = await alice2OmemoManager.encryptMessage('alice', 'Success');
         await aliceOmemoManager.decryptMessage(acknowledgement);
@@ -62,7 +59,7 @@ import { OmemoManager } from './OmemoManager';
     if (!bobOmemoManager.hasSession('bob', bob2sBundle.deviceId)) {
         bobOmemoManager.processDevices('bob', [bob2sBundle]);
         const initialMessage = await bobOmemoManager.encryptMessage('bob', '');
-        await bob2OmemoManager.decryptMessage(initialMessage as EncryptedMessage);
+        await bob2OmemoManager.decryptMessage(initialMessage);
 
         //acknowledge session sucesss
         const acknowledgement = await bob2OmemoManager.encryptMessage('bob', 'Success');
@@ -73,8 +70,8 @@ import { OmemoManager } from './OmemoManager';
         aliceOmemoManager.processDevices('bob', [bobsBundle, bob2sBundle]);
         const initialMessage = await aliceOmemoManager.encryptMessage('bob', '');
 
-        await bobOmemoManager.decryptMessage(initialMessage as EncryptedMessage);
-        await bob2OmemoManager.decryptMessage(initialMessage as EncryptedMessage);
+        await bobOmemoManager.decryptMessage(initialMessage);
+        await bob2OmemoManager.decryptMessage(initialMessage);
         
         //acknowledge session sucesss
         let acknowledgement = await bobOmemoManager.encryptMessage('alice', 'Success');
@@ -154,9 +151,9 @@ import { OmemoManager } from './OmemoManager';
             bobOmemoManager.processDevices('alice', [alicesBundle, alice2sBundle]);
             const initialMessage = await bobOmemoManager.encryptMessage('alice', '');
 
-            await aliceOmemoManager.decryptMessage(initialMessage as EncryptedMessage);
-            await alice2OmemoManager.decryptMessage(initialMessage as EncryptedMessage);
-            await bob2OmemoManager.decryptMessage(initialMessage as EncryptedMessage);
+            await aliceOmemoManager.decryptMessage(initialMessage);
+            await alice2OmemoManager.decryptMessage(initialMessage);
+            await bob2OmemoManager.decryptMessage(initialMessage);
 
             //acknowledge session sucesss
             let acknowledgement = await aliceOmemoManager.encryptMessage('bob', 'Success');
