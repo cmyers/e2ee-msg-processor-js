@@ -14,21 +14,25 @@ module.exports = {
   },
   optimization: {
     splitChunks: {
-      chunks: 'all',
-    },
+      cacheGroups: {
+        common: {
+          name: "common",
+          chunks: "all"
+        }
+      }
+    }
   },
   module: {
     rules: [
       {
         test: /\.ts?$/,
         use: 'ts-loader',
-        exclude: /node_modules/,
-      },
-
-    ],
+        exclude: /node_modules/
+      }
+    ]
   },
   resolve: {
-    extensions: ['.ts'], 
+    extensions: ['.ts']
   },
   output: {
     filename: '[name].js',
