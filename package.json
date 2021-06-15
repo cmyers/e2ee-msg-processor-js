@@ -42,7 +42,7 @@
     "webpack-node-externals": "^3.0.0"
   },
   "dependencies": {
-    "@matrix-org/olm": "~3.2.4",
+    "@matrix-org/olm": "https://gitlab.matrix.org/api/v4/projects/27/packages/npm/@matrix-org/olm/-/@matrix-org/olm-3.2.4.tgz",
     "@peculiar/webcrypto": "~1.1.7",
     "@types/node-localstorage": "~1.3.0",
     "chalk": "~4.1.1",
