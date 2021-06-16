@@ -1,11 +1,12 @@
 import chalk from 'chalk';
+import { LocalStorage } from 'node-localstorage';
 import { OmemoManager } from './OmemoManager';
 
 (async () => {
     await OmemoManager.init();
-    const aliceOmemoManager = new OmemoManager('alice', 'aliceStore');
+    const aliceOmemoManager = new OmemoManager('alice', 'aliceStore', new LocalStorage('./local_storage/aliceStore'));
     const alicesBundle = aliceOmemoManager.generateBundle();
-    const alice2OmemoManager = new OmemoManager('alice', 'aliceStore2');
+    const alice2OmemoManager = new OmemoManager('alice', 'aliceStore2', new LocalStorage('./local_storage/aliceStore2'));
 
     alice2OmemoManager.onDecryptFailed(async (jid: string) => {
         //TODO establish a new session and request resend of failed message
@@ -20,8 +21,8 @@ import { OmemoManager } from './OmemoManager';
         
     })
 
-    const bobOmemoManager = new OmemoManager('bob', 'bobStore');
-    const bob2OmemoManager = new OmemoManager('bob', 'bobStore2');
+    const bobOmemoManager = new OmemoManager('bob', 'bobStore', new LocalStorage('./local_storage/bobStore'));
+    const bob2OmemoManager = new OmemoManager('bob', 'bobStore2', new LocalStorage('./local_storage/bobStore2'));
 
     //const charlieSessionManager = new SessionManager('charlie', 'charlie');
     //const charlieMsgManager = new MessageProcessor(charlieSessionManager);

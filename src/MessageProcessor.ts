@@ -1,6 +1,6 @@
 
 import { Crypto, CryptoKey } from "@peculiar/webcrypto";
-import { DataUtils } from './store';
+import DataUtils from "./DataUtils";
 import { DEVICE_ID, SessionManager } from "./SessionManager";
 
 // TODO handle corrupt sessions - request new session logic if can't decrypt, informing sender to initialise a new session and resend message

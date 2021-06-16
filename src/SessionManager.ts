@@ -1,8 +1,8 @@
 import { Account, Session, Utility } from '@matrix-org/olm';
-import { LocalStorageStore } from './store';
 import chalk from 'chalk';
 import { EncryptedMessage } from './MessageProcessor';
 import { Crypto } from "@peculiar/webcrypto";
+import { LocalStorage, NamespacedLocalStorage } from './NamespacedLocalStorage';
 
 const crypto = new Crypto();
 
@@ -45,7 +45,7 @@ export const DEVICE_ID = 'deviceId';
 export class SessionManager {
     private _sessions: Map<string, Session> = new Map<string, Session>();
     private _account: Account;
-    private _store: LocalStorageStore;
+    private _store: NamespacedLocalStorage;
     private _idKey: string;
     private _deviceId: number;
     private _jid: string;
@@ -53,10 +53,10 @@ export class SessionManager {
     private _devices: Array<Device> = [];
     private _preKeys: Array<PreKey> = [];
 
-    constructor(jid: string, storeName: string) {
+    constructor(jid: string, storeName: string, localStorage: LocalStorage) {
         this._jid = jid;
         this._account = new Account();
-        this._store = new LocalStorageStore(storeName);
+        this._store = new NamespacedLocalStorage(storeName, localStorage);
 
         const pickledAccountId = this._store.get(PICKLED_ACCOUNT_ID);
         const deviceId = this._store.get(DEVICE_ID);
@@ -203,7 +203,7 @@ export class SessionManager {
         return this._account;
     }
 
-    get Store(): LocalStorageStore {
+    get Store(): NamespacedLocalStorage {
         return this._store;
     }
 

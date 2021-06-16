@@ -2,14 +2,15 @@ import EventEmitter from "events";
 import { init as olmInit } from '@matrix-org/olm';
 import { EncryptedMessage, MessageProcessor } from "./MessageProcessor";
 import { Bundle, SessionManager } from "./SessionManager";
+import { LocalStorage } from "node-localstorage";
 
 export class OmemoManager {
     private _sessionManager: SessionManager;
     private _messageManager: MessageProcessor;
     private readonly _sessionEvents = new EventEmitter();
 
-    constructor(jid: string, storeName: string) {
-        this._sessionManager = new SessionManager(jid, storeName);
+    constructor(jid: string, storeName: string, localStorage: LocalStorage) {
+        this._sessionManager = new SessionManager(jid, storeName, localStorage);
         this._messageManager = new MessageProcessor(this._sessionManager);
     }
 
