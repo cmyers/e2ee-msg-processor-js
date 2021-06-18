@@ -1,1 +1,1 @@
-export { OmemoManager } from "./OmemoManager";
+export * from "./OmemoManager";

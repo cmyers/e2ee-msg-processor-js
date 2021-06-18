@@ -1,12 +1,11 @@
 
 import { Crypto, CryptoKey } from "@peculiar/webcrypto";
 import DataUtils from "./DataUtils";
+import { EncryptedMessage } from "./EncryptedMessage";
+import { Key } from "./Key";
 import { DEVICE_ID, SessionManager } from "./SessionManager";
 
-// TODO handle corrupt sessions - request new session logic if can't decrypt, informing sender to initialise a new session and resend message
-
 const crypto = new Crypto();
-
 const TAG_LENGTH = 128;
 
 //storage constants
@@ -15,24 +14,6 @@ const KEY_ALGO = {
     name: 'AES-GCM',
     length: 128
 };
-
-interface Key {
-    jid: string;
-    key_base64: string;
-    type: number;
-    rid: number;
-}
-
-export interface EncryptedMessage {
-    to: string;
-    from: string;
-    header: {
-        sid: number;
-        keys: Array<Key>;
-        iv_base64: string;
-    };
-    payload_base64: string;
-}
 
 export class MessageProcessor {
     private _sessionManager: SessionManager;

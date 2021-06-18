@@ -1,8 +1,11 @@
 import { Account, Session, Utility } from '@matrix-org/olm';
 import chalk from 'chalk';
-import { EncryptedMessage } from './MessageProcessor';
 import { Crypto } from "@peculiar/webcrypto";
-import { LocalStorage, NamespacedLocalStorage } from './NamespacedLocalStorage';
+import { NamespacedLocalStorage } from './NamespacedLocalStorage';
+import { LocalStorage } from './LocalStorage';
+import { Bundle } from './Bundle';
+import { EncryptedMessage } from './EncryptedMessage';
+import { PreKey } from './PreKey';
 
 const crypto = new Crypto();
 
@@ -20,20 +23,6 @@ const IDENTITY_PREFIX = 'identity/';
 const IDENTITY_KEY = 'identityKey';
 const PUBLISHED_PREKEYS = 'published_prekeys';
 const PREKEYS = 100;
-
-interface PreKey {
-    id: number,
-    key: string
-}
-
-export interface Bundle {
-    deviceId: number,
-    ik: string;
-    spks: string;
-    spkId: number;
-    spk: string;
-    prekeys: Array<PreKey>
-}
 
 export interface EncryptedKey {
     body: string,

@@ -9,8 +9,8 @@ module.exports = {
   externalsPresets: { node: true },
   externals: [nodeExternals()],
   entry: {
-    index: './src/index.ts',
-    example: './src/example.ts'
+    index: path.resolve(__dirname, 'src/index.ts'),
+    example: path.resolve(__dirname, 'src/example.ts')
   },
   optimization: {
     splitChunks: {
@@ -26,7 +26,9 @@ module.exports = {
     rules: [
       {
         test: /\.ts?$/,
-        use: 'ts-loader',
+        use: {
+          loader: 'ts-loader'
+        },
         exclude: /node_modules/
       }
     ]
@@ -35,6 +37,7 @@ module.exports = {
     extensions: ['.ts']
   },
   output: {
+    library: 'omemotest',
     filename: '[name].js',
     path: path.resolve(__dirname, 'dist'),
     clean: true,
