@@ -38,13 +38,13 @@
     "url": "https://github.com/cmyers/olm-omemo-ts.git"
   },
   "devDependencies": {
-    "@types/node": "~15.12.2",
+    "@types/node": "~15.12.4",
     "@typescript-eslint/eslint-plugin": "^4.27.0",
     "@typescript-eslint/parser": "^4.27.0",
-    "eslint": "~7.28.0",
+    "eslint": "~7.29.0",
     "ts-loader": "^9.2.3",
-    "typescript": "~4.3.2",
-    "webpack": "^5.39.0",
+    "typescript": "~4.3.4",
+    "webpack": "^5.39.1",
     "webpack-cli": "^4.7.2",
     "webpack-node-externals": "^3.0.0"
   },
