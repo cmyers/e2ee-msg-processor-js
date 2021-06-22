@@ -11,6 +11,10 @@ export class DataUtils {
     static bufferToBase64String(buffer: Buffer): string {
       return this.arrayBufferToBase64String(buffer);
     }
+    
+    static base64StringToBuffer(str: string): Buffer {
+      return Buffer.from(str, 'base64');
+    }
   
     static stringToArrayBuffer(str: string): ArrayBuffer {
       return new Uint8Array(Buffer.from(str)).buffer;
