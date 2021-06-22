@@ -1,4 +1,4 @@
-export default class DataUtils {
+export class DataUtils {
 
     static arrayBufferToBase64String(arrayBuffer: ArrayBuffer): string {
       return Buffer.from(arrayBuffer).toString('base64');

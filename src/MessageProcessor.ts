@@ -1,6 +1,6 @@
 
 import { Crypto, CryptoKey } from "@peculiar/webcrypto";
-import DataUtils from "./DataUtils";
+import { DataUtils } from "./DataUtils";
 import { EncryptedMessage } from "./EncryptedMessage";
 import { Key } from "./Key";
 import { DEVICE_ID, SessionManager } from "./SessionManager";
