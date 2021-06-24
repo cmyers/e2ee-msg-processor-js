@@ -1,6 +1,6 @@
 {
   "name": "olm-omemo-ts",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "description": "",
   "types": "dist",
   "main": "dist/index.js",
