@@ -1,8 +1,8 @@
 export class DataUtils {
-  static appendArrayBuffer(buffer1: ArrayBuffer, buffer2: ArrayBuffer): ArrayBuffer {
-    const tmp = new Uint8Array(buffer1.byteLength + buffer2.byteLength);
-    tmp.set(new Uint8Array(buffer1), 0);
-    tmp.set(new Uint8Array(buffer2), buffer1.byteLength);
-    return tmp.buffer;
+  static appendBuffer(buffer1: Buffer, buffer2: Buffer): Buffer {
+    const tmp = Buffer.alloc(buffer1.byteLength + buffer2.byteLength);
+    tmp.set(Buffer.from(buffer1), 0);
+    tmp.set(Buffer.from(buffer2), buffer1.byteLength);
+    return tmp;
   }
 }

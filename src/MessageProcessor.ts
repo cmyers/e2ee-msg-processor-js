@@ -1,6 +1,5 @@
 
 import { Crypto, CryptoKey } from "@peculiar/webcrypto";
-import { TextEncoder } from "util";
 import { DataUtils } from "./DataUtils";
 import { EncryptedMessage } from "./EncryptedMessage";
 import { Key } from "./Key";
@@ -23,10 +22,10 @@ export class MessageProcessor {
         this._sessionManager = sessionManager;
     }
 
-    private async encryptKey(jid: string, deviceId: number, key: CryptoKey, length: number, encryptedText: ArrayBuffer): Promise<Key> {
+    private async encryptKey(jid: string, deviceId: number, key: CryptoKey, length: number, encryptedText: Buffer): Promise<Key> {
         const tag = encryptedText.slice(length),
             exported_key = await crypto.subtle.exportKey('raw', key),
-            key_tag = Buffer.from(DataUtils.appendArrayBuffer(exported_key, tag)).toString('base64'),
+            key_tag = Buffer.from(DataUtils.appendBuffer(exported_key, tag)).toString('base64'),
             encryptedKey = this._sessionManager.encryptKey(key_tag, jid, deviceId);
 
         return {
@@ -38,14 +37,14 @@ export class MessageProcessor {
     }
 
     async encryptMessage(jid: string, plaintext: string): Promise<EncryptedMessage> {
-        const iv = crypto.getRandomValues(new Uint8Array(12)),
+        const iv = crypto.getRandomValues(Buffer.alloc(12, 'utf-8')),
             key = await crypto.subtle.generateKey(KEY_ALGO, true, ['encrypt', 'decrypt']),
             algo = {
                 'name': 'AES-GCM',
                 'iv': iv,
                 'tagLength': TAG_LENGTH
             },
-            encrypted = await crypto.subtle.encrypt(algo, key, new TextEncoder().encode(plaintext)),
+            encrypted = await crypto.subtle.encrypt(algo, key, Buffer.from(plaintext, 'utf-8')),
             length = encrypted.byteLength - 16,
             ciphertext = encrypted.slice(0, length);
 
@@ -88,7 +87,7 @@ export class MessageProcessor {
         const key = Buffer.from(decryptedKey, 'base64').slice(0, 16);
         const tag = Buffer.from(decryptedKey, 'base64').slice(16);
         const key_obj = await crypto.subtle.importKey('raw', key, KEY_ALGO, true, ['encrypt', 'decrypt']);
-        const cipher = DataUtils.appendArrayBuffer(Buffer.from(encryptedMessage.payload_base64, 'base64'), tag);
+        const cipher = DataUtils.appendBuffer(Buffer.from(encryptedMessage.payload_base64, 'base64'), tag);
 
         const algo = {
             'name': 'AES-GCM',
