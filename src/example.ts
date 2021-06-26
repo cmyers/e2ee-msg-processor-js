@@ -29,6 +29,7 @@ import { OmemoManager } from './OmemoManager';
 
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's deviceIds: ${JSON.stringify([bobOmemoManager.getDeviceId(), bobOmemoManager.getDeviceId()])}`));
     
+    //TODO check if bundle already published before calling generate bundle. This will mess up any offline prekey messages received!
     const bobsBundle = bobOmemoManager.generateBundle();
     console.log(chalk.rgb(255, 191, 0)(`Alice gets Bob's bundle: ${JSON.stringify(bobsBundle)}`));
 
