@@ -24,7 +24,7 @@ export class MessageProcessor {
 
     private async encryptKey(jid: string, deviceId: number, key: CryptoKey, length: number, encryptedText: Buffer): Promise<Key> {
         const tag = encryptedText.slice(length),
-            exported_key = await crypto.subtle.exportKey('raw', key),
+            exported_key = Buffer.from(await crypto.subtle.exportKey('raw', key)),
             key_tag = Buffer.from(DataUtils.appendBuffer(exported_key, tag)).toString('base64'),
             encryptedKey = this._sessionManager.encryptKey(key_tag, jid, deviceId);
 
@@ -44,7 +44,7 @@ export class MessageProcessor {
                 'iv': iv,
                 'tagLength': TAG_LENGTH
             },
-            encrypted = await crypto.subtle.encrypt(algo, key, Buffer.from(plaintext, 'utf-8')),
+            encrypted = Buffer.from(await crypto.subtle.encrypt(algo, key, Buffer.from(plaintext, 'utf-8'))),
             length = encrypted.byteLength - 16,
             ciphertext = encrypted.slice(0, length);
 
