@@ -9,8 +9,7 @@ module.exports = {
   externalsPresets: { node: true },
   externals: [nodeExternals()],
   entry: {
-    index: path.resolve(__dirname, 'src/index.ts'),
-    example: path.resolve(__dirname, 'src/example.ts')
+    index: './src/index.ts'
   },
   optimization: {
     splitChunks: {
