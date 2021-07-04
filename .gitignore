@@ -3,5 +3,7 @@
 /local_storage
 
 #vs
-/.vscode
 /.vs
+
+#build artefacts
+/*.tgz
