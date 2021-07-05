@@ -80,6 +80,7 @@ export class SessionManager {
             }
         });
         this._store.set(PUBLISHED_PREKEYS, JSON.stringify(this._preKeys));
+        //TODO: emit event to publish new bundle
     }
     
     generatePreKeyBundle(): Bundle {
