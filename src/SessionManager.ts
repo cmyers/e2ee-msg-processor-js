@@ -6,6 +6,7 @@ import { LocalStorage } from './LocalStorage';
 import { Bundle } from './Bundle';
 import { EncryptedMessage } from './EncryptedMessage';
 import { PreKey } from './PreKey';
+import EventEmitter from 'events';
 
 const crypto = new Crypto();
 
@@ -32,6 +33,7 @@ export interface EncryptedKey {
 export const DEVICE_ID = 'deviceId';
 
 export class SessionManager {
+    private readonly _sessionEvents = new EventEmitter();
     private _sessions: Map<string, Session> = new Map<string, Session>();
     private _account: Account;
     private _store: NamespacedLocalStorage;
@@ -41,7 +43,7 @@ export class SessionManager {
     private _pickledAccountId: number;
     private _devices: Array<Device> = [];
     private _preKeys: Array<PreKey> = [];
-
+    
     constructor(jid: string, storeName: string, localStorage: LocalStorage) {
         this._jid = jid;
         this._account = new Account();
@@ -144,6 +146,11 @@ export class SessionManager {
         return session;
     }
 
+    onSessionInitialised(cb: (jid: string) => void): void {
+        this._sessionEvents.removeAllListeners();
+        this._sessionEvents.on('sessionInitialised', (jid) => cb(jid));
+    }
+
     encryptKey(key: string, jid: string, deviceId: number): EncryptedKey {
         const session = this.getSession(jid, deviceId);
         //TODO if session is null we need to create one right? or should we do this before this point?
@@ -163,7 +170,7 @@ export class SessionManager {
         if (key == null) {
             return null; // This is not meant for this device so ignore it
         }
-
+        
         try {
             const session = this.getSession(encryptedMessage.from, encryptedMessage.header.sid);
             if(!session) {
@@ -177,6 +184,7 @@ export class SessionManager {
             //receiver needs to acknowledge the session success by sending a message back, this is to be implemented in the example for now, however could possibly be driven by events?
             if (key.type === 0) {
                 const session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
+                this._sessionEvents.emit('sessionInitialised', encryptedMessage.from);
                 
                 if (!session || !session.matches_inbound(key.key_base64)) {
                     throw new Error(`Something went wrong establishing an inbound session: ${JSON.stringify(session)}`);
@@ -184,6 +192,7 @@ export class SessionManager {
                 
                 return this.decryptKey(encryptedMessage);
             } else {
+                //this.deleteSession(encryptedMessage.from, encryptedMessage.header.sid);
                 throw e; //TODO We can't handle this here, so we need to throw the error for the client to re-establish a new session. Emit an event for the client to do this? It will need the latest bundle and new prekey
             }
         }
@@ -223,6 +232,12 @@ export class SessionManager {
         }
         return null;
     }
+
+    // private deleteSession(jid: string, deviceId: number): void {
+    //     this._store.remove(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}`);
+    //     this._store.remove(`${PICKLED_SESSION_PREFIX}${jid}/${deviceId}`);
+    //     this._sessions.delete(`${jid}/${deviceId}`);
+    // }
 
     private pickleSession(jid: string, deviceId: number, session: Session) {
         let pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}`);

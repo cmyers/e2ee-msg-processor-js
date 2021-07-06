@@ -22,7 +22,11 @@ export class OmemoManager {
 
     onDecryptFailed(cb: (jid: string) => void): void {
         this._sessionEvents.removeAllListeners();
-        this._sessionEvents.on('requestNewSession', (jid: string) => cb(jid));
+        this._sessionEvents.on('decryptionFailed', (jid: string) => cb(jid));
+    }
+
+    onSessionInitialised(cb: (jid: string) => void): void {
+        this._sessionManager.onSessionInitialised(cb);
     }
 
     generateBundle(): Bundle {
@@ -56,7 +60,7 @@ export class OmemoManager {
             return await this._messageManager.processMessage(encryptedMessage);
         } catch(e) {
             console.log(e);
-            this._sessionEvents.emit('requestNewSession', encryptedMessage.from);
+            this._sessionEvents.emit('decryptionFailed', encryptedMessage.from);
             return null;
         }
         
