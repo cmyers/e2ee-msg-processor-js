@@ -76,7 +76,7 @@ export class OmemoManager {
     }
 
     hasSession(jid: string, deviceId: number): boolean {
-        return this._sessionManager.getSession(jid, deviceId) ? true : false;
+        return this._sessionManager.getSession(jid, deviceId, true) ? true : false;
     }
 
     getDeviceId(): number {

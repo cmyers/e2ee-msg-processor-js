@@ -34,16 +34,16 @@ export const DEVICE_ID = 'deviceId';
 
 export class SessionManager {
     private readonly _sessionEvents = new EventEmitter();
-    private _sessions: Map<string, Session> = new Map<string, Session>();
-    private _account: Account;
-    private _store: NamespacedLocalStorage;
-    private _idKey: string;
-    private _deviceId: number;
-    private _jid: string;
-    private _pickledAccountId: number;
+    private readonly _jid: string;
+    private readonly _sessions: Map<string, Session> = new Map<string, Session>();
+    private readonly _account: Account;
+    private readonly _store: NamespacedLocalStorage;
+    private readonly _idKey: string;
+    private readonly _deviceId: number;
+    private readonly _pickledAccountId: number;
     private _devices: Array<Device> = [];
     private _preKeys: Array<PreKey> = [];
-    
+
     constructor(jid: string, storeName: string, localStorage: LocalStorage) {
         this._jid = jid;
         this._account = new Account();
@@ -84,7 +84,7 @@ export class SessionManager {
         this._store.set(PUBLISHED_PREKEYS, JSON.stringify(this._preKeys));
         //TODO: emit event to publish new bundle
     }
-    
+
     generatePreKeyBundle(): Bundle {
         const randomIds = crypto.getRandomValues(new Uint32Array(2));
         const signedPreKeyId = randomIds[0];
@@ -129,7 +129,7 @@ export class SessionManager {
         if (devices.length === 0) {
             const deviceIds = this._store.get(`${DEVICEIDS_PREFIX}${jid}`);
             devices = deviceIds ? JSON.parse(deviceIds) : [];
-            if(devices?.length > 0) {
+            if (devices?.length > 0) {
                 this.updateDeviceIds(jid, devices);
             }
             return devices ? devices : [];
@@ -137,11 +137,11 @@ export class SessionManager {
         return devices;
     }
 
-    getSession(jid: string, deviceId: number): Session | null {
-        const session = this._sessions.get(`${jid}/${deviceId}`);
+    getSession(jid: string, deviceId: number, current: boolean): Session | null {
+        const session = this._sessions.get(`${jid}/${deviceId}/${current ? 'current' : 'old'}`);
 
         if (!session) {
-            return this.loadSession(jid, deviceId);
+            return this.loadSession(jid, deviceId, current);
         }
         return session;
     }
@@ -152,51 +152,187 @@ export class SessionManager {
     }
 
     encryptKey(key: string, jid: string, deviceId: number): EncryptedKey {
-        const session = this.getSession(jid, deviceId);
+        const session = this.getSession(jid, deviceId, true);
         //TODO if session is null we need to create one right? or should we do this before this point?
-        if(!session) {
+        if (!session) {
             throw new Error(`Missing session for JID: ${jid} DeviceId: ${deviceId}`);
         }
         const encrypted = session.encrypt(key);
-        this.pickleSession(jid, deviceId, session);
+        this.pickleSession(jid, deviceId, session, true);
         return encrypted as EncryptedKey;
     }
 
-    // TODO Use events to trigger sending messages when required?
-    //Get devices for each device from recipient and create a session for each if one doesn't exist
+
+    /*
+    https://matrix.org/docs/guides/end-to-end-encryption-implementation-guide
+    When a message (of either type) is received, a client should first attempt to decrypt it with each of the known sessions for that sender. There are two steps to this:
+
+        If (and only if) type==0, the client should call olm_matches_inbound_session with the session and body. 
+        This returns a flag indicating whether the message was encrypted using that session.
+        The client calls olm_decrypt, with the session, type, and body. If this is successful, it returns the plaintext of the event.
+        If the client was unable to decrypt the message using any known sessions (or if there are no known sessions yet), 
+        and the message had type 0, and olm_matches_inbound_session wasn't true for any existing sessions, 
+        then the client can try establishing a new session. 
+        
+        This is done as follows:
+
+        Call olm_create_inbound_session_from using the olm account, and the sender_key and body of the message.
+        If the session was established successfully:
+        Call olm_remove_one_time_keys to ensure that the same one-time-key cannot be reused.
+        Call olm_decrypt with the new session.
+        Store the session for future use.
+        At the end of this, the client will hopefully have successfully decrypted the payload.
+
+        */
+
     async decryptKey(encryptedMessage: EncryptedMessage): Promise<string | null> {
         const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId);
 
         if (key == null) {
             return null; // This is not meant for this device so ignore it
         }
-        
+
+        const currentSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, true);
+
         try {
-            const session = this.getSession(encryptedMessage.from, encryptedMessage.header.sid);
-            if(!session) {
-                throw new Error(`No session for JID: ${encryptedMessage.from} DeviceId: ${encryptedMessage.header.sid}`)
-            }
-            const decrypted = session.decrypt(key.type, key.key_base64);
-            this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, session);
-            return decrypted;
-        } catch(e) {
-            //if sender has lost original session they create a new session. Or can happen if receiver's session is corrupt or missing. Correct only works if sender loses session. This is ugly. Use events to trigger what happens?
-            //receiver needs to acknowledge the session success by sending a message back, this is to be implemented in the example for now, however could possibly be driven by events?
             if (key.type === 0) {
-                const session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
-                this._sessionEvents.emit('sessionInitialised', encryptedMessage.from);
-                
-                if (!session || !session.matches_inbound(key.key_base64)) {
-                    throw new Error(`Something went wrong establishing an inbound session: ${JSON.stringify(session)}`);
+                if(currentSession && currentSession.matches_inbound(key.key_base64)) {
+                    const decrypted = currentSession.decrypt(key.type, key.key_base64);
+                    this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, true);
+                    return decrypted;
+                } else {
+                    if(currentSession) {
+                        this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, false);
+                    }
+                    
+                    const session = this.createSession(encryptedMessage.from, encryptedMessage.header.sid);
+                    session.create_inbound(this._account, key.key_base64);
+
+                    this._account.remove_one_time_keys(session);
+                    this._account.generate_one_time_keys(1);
+                    this.updateOneTimeKeys();
+
+                    const decrypted = session.decrypt(key.type, key.key_base64);
+                    this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, session, true);
+                    return decrypted;
                 }
-                
-                return this.decryptKey(encryptedMessage);
             } else {
-                //this.deleteSession(encryptedMessage.from, encryptedMessage.header.sid);
-                throw e; //TODO We can't handle this here, so we need to throw the error for the client to re-establish a new session. Emit an event for the client to do this? It will need the latest bundle and new prekey
+                if (currentSession) {
+                    const decrypted = currentSession.decrypt(key.type, key.key_base64);
+                    this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, true);
+                    return decrypted;
+                } else {
+                    throw new Error(`No session`);
+                }
             }
+            
+        } catch (e) {
+            console.log(this.JID);
+            const oldSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, false);
+            if(oldSession) {
+                const decrypted = oldSession.decrypt(key.type, key.key_base64);
+                this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, oldSession, true);
+                if(currentSession) {
+                    this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, false);
+                }
+                return decrypted;
+            }
+            throw e;
         }
     }
+
+
+    // async decryptKey(encryptedMessage: EncryptedMessage): Promise<string | null> {
+    //     const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId);
+
+    //     if (key == null) {
+    //         return null; // This is not meant for this device so ignore it
+    //     }
+
+    //     const currentSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, true);
+
+    //     try {
+    //         if(!currentSession) {
+    //             throw new Error(`No session for JID: ${encryptedMessage.from} DeviceId: ${encryptedMessage.header.sid}`)
+    //         }
+    //         const decrypted = currentSession.decrypt(key.type, key.key_base64);
+    //         this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, true);
+    //         return decrypted;
+    //     } catch(e) {
+    //         const oldSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, false);
+
+    //         if(oldSession) {
+    //             const decrypted = oldSession.decrypt(key.type, key.key_base64);
+    //             this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, oldSession, true);
+    //             return decrypted;
+    //         }
+
+    //         if (key.type === 0) {
+    //             const session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
+    //             this._sessionEvents.emit('sessionInitialised', encryptedMessage.from);
+
+    //             if(currentSession) {
+    //                 this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, false);
+    //             }
+
+    //             if (!session || !session.matches_inbound(key.key_base64)) {
+    //                 throw new Error(`Something went wrong establishing an inbound session: ${JSON.stringify(session)}`);
+    //             }
+
+    //             return this.decryptKey(encryptedMessage);
+    //         } else {
+    //             //this.deleteSession(encryptedMessage.from, encryptedMessage.header.sid);
+    //             throw e; //TODO We can't handle this here, so we need to throw the error for the client to re-establish a new session. Emit an event for the client to do this? It will need the latest bundle and new prekey
+    //         }
+    //     }
+    // }
+
+    // // TODO Use events to trigger sending messages when required?
+    // //Get devices for each device from recipient and create a session for each if one doesn't exist
+    // // TOTEST: Keep copy of old session, if that fails try initialising with new?!
+    // async decryptKey(encryptedMessage: EncryptedMessage): Promise<string | null> {
+    //     const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId);
+
+    //     if (key == null) {
+    //         return null; // This is not meant for this device so ignore it
+    //     }
+
+    //     const oldSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, false);
+    //     const currentSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, true);
+    //     let session: Session | null = null;
+    //     if (currentSession && currentSession.matches_inbound(key.key_base64)) {
+    //         console.log('Matches current session');
+    //         session = currentSession;
+    //         this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, session, true);
+    //     } else if (oldSession && oldSession.matches_inbound(key.key_base64)) {
+    //         console.log('Matches old session');
+    //         session = oldSession;
+    //         this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, session, true);
+    //         this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession as Session, true);
+    //     }
+    //     if(session) {
+    //         const decrypted = session.decrypt(key.type, key.key_base64);
+    //         //this._store.set(`${SESSION_STATE}/${encryptedMessage.from}`, 'ACKNOWLEDGED');
+    //         return decrypted;
+    //     } else {
+    //         console.log(`Doesn't match`);
+    //         if (key.type === 0) {
+    //             session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
+    //             console.log(`Init inbound`);
+    //             this._sessionEvents.emit('sessionInitialised', encryptedMessage.from);
+
+    //             if (!session) {
+    //                 throw new Error(`Something went wrong establishing an inbound session: ${JSON.stringify(session)}`);
+    //             }
+
+    //             return this.decryptKey(encryptedMessage);
+    //         } else {
+    //             throw new Error('Sessions out of sync');
+    //             //
+    //             //throw new Error('')e; //TODO We can't handle this here, so we need to throw the error for the client to re-establish a new session. Emit an event for the client to do this? It will need the latest bundle and new prekey
+    //         }
+    //     }
+    // }
 
     get Account(): Account {
         return this._account;
@@ -218,16 +354,16 @@ export class SessionManager {
         return this._idKey;
     }
 
-    private loadSession(jid: string, deviceId: number): Session | null {
+    private loadSession(jid: string, deviceId: number, current: boolean): Session | null {
         const session = new Session();
 
-        const pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}`);
-        const pickledSession = this._store.get(`${PICKLED_SESSION_PREFIX}${jid}/${deviceId}`);
+        const pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}/${current ? 'current' : 'old'}`);
+        const pickledSession = this._store.get(`${PICKLED_SESSION_PREFIX}${jid}/${deviceId}/${current ? 'current' : 'old'}`);
 
         if (pickledSessionKey && pickledSession) {
-            console.log(chalk.blue(`Load ${this._jid}'s session with ${jid}/${deviceId}: ${pickledSession}`));
+            console.log(chalk.blue(`Load ${this._jid}'s ${current ? 'current' : 'old'} session with ${jid}/${deviceId}: ${pickledSession}`));
             session.unpickle(pickledSessionKey, pickledSession);
-            this._sessions.set(`${jid}/${deviceId}`, session);
+            this._sessions.set(`${jid}/${deviceId}/${current ? 'current' : 'old'}`, session);
             return session;
         }
         return null;
@@ -239,43 +375,58 @@ export class SessionManager {
     //     this._sessions.delete(`${jid}/${deviceId}`);
     // }
 
-    private pickleSession(jid: string, deviceId: number, session: Session) {
-        let pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}`);
+    private pickleSession(jid: string, deviceId: number, session: Session, current: boolean) {
+        // if(current) {
+        //     const currentSession = this._sessions.get(`${jid}/${deviceId}/${current ? 'current' : 'old'}`);
+
+        //     if(currentSession) {
+        //         let pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/old`);
+        //         if (!pickledSessionKey) {
+        //             const randValues = crypto.getRandomValues(new Uint32Array(1));
+        //             pickledSessionKey = randValues[0].toString();
+        //             this._store.set(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}/old`, pickledSessionKey);
+        //         }
+        //         this._sessions.set(`${jid}/${deviceId}/old`, session);
+        //         this._store.set(`${PICKLED_SESSION_PREFIX}${jid}/${deviceId}/old`, session.pickle(pickledSessionKey));
+        //     } 
+        // }
+        
+        let pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}/${current ? 'current' : 'old'}`);
         if (!pickledSessionKey) {
             const randValues = crypto.getRandomValues(new Uint32Array(1));
             pickledSessionKey = randValues[0].toString();
-            this._store.set(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}`, pickledSessionKey);
+            this._store.set(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}/${current ? 'current' : 'old'}`, pickledSessionKey);
         }
-
-        this._store.set(`${PICKLED_SESSION_PREFIX}${jid}/${deviceId}`, session.pickle(pickledSessionKey));
+        this._sessions.set(`${jid}/${deviceId}/${current ? 'current' : 'old'}`, session);
+        this._store.set(`${PICKLED_SESSION_PREFIX}${jid}/${deviceId}/${current ? 'current' : 'old'}`, session.pickle(pickledSessionKey));
     }
 
     private createSession(jid: string, deviceId: number): Session {
         const session = new Session();
-        this.pickleSession(jid, deviceId, session);
+        this.pickleSession(jid, deviceId, session, true);
         return session;
     }
 
-    private async initialiseInboundSession(keyExchangeMessage: EncryptedMessage): Promise<Session | null> {
-        const session = this.createSession(keyExchangeMessage.from, keyExchangeMessage.header.sid);
-        const key = keyExchangeMessage.header.keys.find(x => x.rid === this.DeviceId);
+    // private async initialiseInboundSession(keyExchangeMessage: EncryptedMessage): Promise<Session | null> {
+    //     const session = this.createSession(keyExchangeMessage.from, keyExchangeMessage.header.sid);
+    //     const key = keyExchangeMessage.header.keys.find(x => x.rid === this.DeviceId);
 
-        if(!key) {
-            return null;
-        }
+    //     if (!key) {
+    //         return null;
+    //     }
 
-        session.create_inbound(this._account, key.key_base64);
+    //     session.create_inbound(this._account, key.key_base64);
 
-        this._account.remove_one_time_keys(session);
-        this._account.generate_one_time_keys(1);
-        this.updateOneTimeKeys();
-        
-        this._sessions.set(`${keyExchangeMessage.from}/${keyExchangeMessage.header.sid}`, session);
-        this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
-        this.pickleSession(keyExchangeMessage.from, keyExchangeMessage.header.sid, session);
+    //     this._account.remove_one_time_keys(session);
+    //     this._account.generate_one_time_keys(1);
+    //     this.updateOneTimeKeys();
 
-        return session;
-    }
+    //     this._sessions.set(`${keyExchangeMessage.from}/${keyExchangeMessage.header.sid}`, session);
+    //     this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
+    //     this.pickleSession(keyExchangeMessage.from, keyExchangeMessage.header.sid, session, true);
+
+    //     return session;
+    // }
 
     initialiseOutboundSession(jid: string, bundle: Bundle): void {
 
@@ -283,7 +434,7 @@ export class SessionManager {
             throw new Error('Bundle verification failed');
         }
 
-        console.log(chalk.blue(`${this._jid}'s verified ${jid}'s identity`));
+        console.log(chalk.blue(`${this._jid} verified ${jid}'s identity`));
 
         const session = this.createSession(jid, bundle.deviceId);
 
@@ -300,7 +451,7 @@ export class SessionManager {
 
         this._sessions.set(`${jid}/${bundle.deviceId}`, session);
         this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
-        this.pickleSession(jid, bundle.deviceId, session);
+        this.pickleSession(jid, bundle.deviceId, session, true);
     }
 
     private async verifyBundle(bundle: Bundle): Promise<boolean> {
