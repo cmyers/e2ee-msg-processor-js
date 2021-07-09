@@ -82,13 +82,14 @@ export class SessionManager {
             }
         });
         this._store.set(PUBLISHED_PREKEYS, JSON.stringify(this._preKeys));
-        //TODO: emit event to publish new bundle
     }
 
-    generatePreKeyBundle(): Bundle {
+    getPreKeyBundle(): Bundle {
         const randomIds = crypto.getRandomValues(new Uint32Array(2));
         const signedPreKeyId = randomIds[0];
-        this._account.generate_one_time_keys(PREKEYS);
+        if(this._preKeys.length === 0) {
+            this._account.generate_one_time_keys(PREKEYS);
+        }
         const signature = this._account.sign(signedPreKeyId + this._idKey);
 
         // TODO CLARIFY:
@@ -139,16 +140,23 @@ export class SessionManager {
 
     getSession(jid: string, deviceId: number, current: boolean): Session | null {
         const session = this._sessions.get(`${jid}/${deviceId}/${current ? 'current' : 'old'}`);
+        console.log(this._jid, 'gets Current Session', current, session);
 
         if (!session) {
             return this.loadSession(jid, deviceId, current);
         }
+        
         return session;
     }
 
     onSessionInitialised(cb: (jid: string) => void): void {
         this._sessionEvents.removeAllListeners();
         this._sessionEvents.on('sessionInitialised', (jid) => cb(jid));
+    }
+
+    onBundleUpdated(cb: (bundle: Bundle) => void): void {
+        this._sessionEvents.removeAllListeners();
+        this._sessionEvents.on('bundleUpdated', (bundle) => cb(bundle));
     }
 
     encryptKey(key: string, jid: string, deviceId: number): EncryptedKey {
@@ -207,10 +215,12 @@ export class SessionManager {
                     
                     const session = this.createSession(encryptedMessage.from, encryptedMessage.header.sid);
                     session.create_inbound(this._account, key.key_base64);
+                    this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
 
                     this._account.remove_one_time_keys(session);
                     this._account.generate_one_time_keys(1);
-                    this.updateOneTimeKeys();
+                    const bundle = this.getPreKeyBundle();
+                    this._sessionEvents.emit('bundleUpdated', bundle);
 
                     const decrypted = session.decrypt(key.type, key.key_base64);
                     this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, session, true);
@@ -222,13 +232,15 @@ export class SessionManager {
                     this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, true);
                     return decrypted;
                 } else {
-                    throw new Error(`No session`);
+                    throw new Error(`No current session`);
                 }
             }
             
         } catch (e) {
-            console.log(this.JID);
             const oldSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, false);
+            console.log(this.JID, 'current' , currentSession);
+            console.log(this.JID, 'old', oldSession);
+            console.log('keyType', key.type);
             if(oldSession) {
                 const decrypted = oldSession.decrypt(key.type, key.key_base64);
                 this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, oldSession, true);
@@ -237,7 +249,7 @@ export class SessionManager {
                 }
                 return decrypted;
             }
-            throw e;
+            throw new Error(`No old session to use`);
         }
     }
 
@@ -375,30 +387,15 @@ export class SessionManager {
     //     this._sessions.delete(`${jid}/${deviceId}`);
     // }
 
-    private pickleSession(jid: string, deviceId: number, session: Session, current: boolean) {
-        // if(current) {
-        //     const currentSession = this._sessions.get(`${jid}/${deviceId}/${current ? 'current' : 'old'}`);
-
-        //     if(currentSession) {
-        //         let pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/old`);
-        //         if (!pickledSessionKey) {
-        //             const randValues = crypto.getRandomValues(new Uint32Array(1));
-        //             pickledSessionKey = randValues[0].toString();
-        //             this._store.set(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}/old`, pickledSessionKey);
-        //         }
-        //         this._sessions.set(`${jid}/${deviceId}/old`, session);
-        //         this._store.set(`${PICKLED_SESSION_PREFIX}${jid}/${deviceId}/old`, session.pickle(pickledSessionKey));
-        //     } 
-        // }
-        
+    private pickleSession(jid: string, deviceId: number, session: Session, current: boolean) { 
         let pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}/${current ? 'current' : 'old'}`);
         if (!pickledSessionKey) {
             const randValues = crypto.getRandomValues(new Uint32Array(1));
             pickledSessionKey = randValues[0].toString();
             this._store.set(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}/${current ? 'current' : 'old'}`, pickledSessionKey);
         }
-        this._sessions.set(`${jid}/${deviceId}/${current ? 'current' : 'old'}`, session);
         this._store.set(`${PICKLED_SESSION_PREFIX}${jid}/${deviceId}/${current ? 'current' : 'old'}`, session.pickle(pickledSessionKey));
+        this._sessions.set(`${jid}/${deviceId}/${current ? 'current' : 'old'}`, session);
     }
 
     private createSession(jid: string, deviceId: number): Session {
@@ -449,7 +446,6 @@ export class SessionManager {
             this._account, bundle.ik, otk_id.key
         );
 
-        this._sessions.set(`${jid}/${bundle.deviceId}`, session);
         this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
         this.pickleSession(jid, bundle.deviceId, session, true);
     }
