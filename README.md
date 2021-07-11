@@ -1,1 +1,1 @@
-omemo-olm-ts
+omemo-olm-js
