@@ -110,7 +110,6 @@ export class SessionManager {
         };
     }
 
-    //TODO add device if we don't have it (except our own?)
     updateDeviceIds(jid: string, deviceIds: Array<number>): void {
         const newDeviceList = this._devices.filter(x => x.jid !== jid);
 
@@ -161,7 +160,6 @@ export class SessionManager {
 
     encryptKey(key: string, jid: string, deviceId: number): EncryptedKey {
         const session = this.getSession(jid, deviceId, true);
-        //TODO if session is null we need to create one right? or should we do this before this point?
         if (!session) {
             throw new Error(`Missing session for JID: ${jid} DeviceId: ${deviceId}`);
         }
@@ -170,34 +168,11 @@ export class SessionManager {
         return encrypted as EncryptedKey;
     }
 
-
-    /*
-    https://matrix.org/docs/guides/end-to-end-encryption-implementation-guide
-    When a message (of either type) is received, a client should first attempt to decrypt it with each of the known sessions for that sender. There are two steps to this:
-
-        If (and only if) type==0, the client should call olm_matches_inbound_session with the session and body. 
-        This returns a flag indicating whether the message was encrypted using that session.
-        The client calls olm_decrypt, with the session, type, and body. If this is successful, it returns the plaintext of the event.
-        If the client was unable to decrypt the message using any known sessions (or if there are no known sessions yet), 
-        and the message had type 0, and olm_matches_inbound_session wasn't true for any existing sessions, 
-        then the client can try establishing a new session. 
-        
-        This is done as follows:
-
-        Call olm_create_inbound_session_from using the olm account, and the sender_key and body of the message.
-        If the session was established successfully:
-        Call olm_remove_one_time_keys to ensure that the same one-time-key cannot be reused.
-        Call olm_decrypt with the new session.
-        Store the session for future use.
-        At the end of this, the client will hopefully have successfully decrypted the payload.
-
-        */
-
     async decryptKey(encryptedMessage: EncryptedMessage): Promise<string | null> {
         const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId);
 
         if (key == null) {
-            return null; // This is not meant for this device so ignore it
+            return null;
         }
 
         const currentSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, true);
@@ -238,9 +213,6 @@ export class SessionManager {
             
         } catch (e) {
             const oldSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, false);
-            console.log(this.JID, 'current' , currentSession);
-            console.log(this.JID, 'old', oldSession);
-            console.log('keyType', key.type);
             if(oldSession) {
                 const decrypted = oldSession.decrypt(key.type, key.key_base64);
                 this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, oldSession, true);
@@ -252,99 +224,6 @@ export class SessionManager {
             throw new Error(`No old session to use`);
         }
     }
-
-
-    // async decryptKey(encryptedMessage: EncryptedMessage): Promise<string | null> {
-    //     const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId);
-
-    //     if (key == null) {
-    //         return null; // This is not meant for this device so ignore it
-    //     }
-
-    //     const currentSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, true);
-
-    //     try {
-    //         if(!currentSession) {
-    //             throw new Error(`No session for JID: ${encryptedMessage.from} DeviceId: ${encryptedMessage.header.sid}`)
-    //         }
-    //         const decrypted = currentSession.decrypt(key.type, key.key_base64);
-    //         this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, true);
-    //         return decrypted;
-    //     } catch(e) {
-    //         const oldSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, false);
-
-    //         if(oldSession) {
-    //             const decrypted = oldSession.decrypt(key.type, key.key_base64);
-    //             this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, oldSession, true);
-    //             return decrypted;
-    //         }
-
-    //         if (key.type === 0) {
-    //             const session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
-    //             this._sessionEvents.emit('sessionInitialised', encryptedMessage.from);
-
-    //             if(currentSession) {
-    //                 this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, false);
-    //             }
-
-    //             if (!session || !session.matches_inbound(key.key_base64)) {
-    //                 throw new Error(`Something went wrong establishing an inbound session: ${JSON.stringify(session)}`);
-    //             }
-
-    //             return this.decryptKey(encryptedMessage);
-    //         } else {
-    //             //this.deleteSession(encryptedMessage.from, encryptedMessage.header.sid);
-    //             throw e; //TODO We can't handle this here, so we need to throw the error for the client to re-establish a new session. Emit an event for the client to do this? It will need the latest bundle and new prekey
-    //         }
-    //     }
-    // }
-
-    // // TODO Use events to trigger sending messages when required?
-    // //Get devices for each device from recipient and create a session for each if one doesn't exist
-    // // TOTEST: Keep copy of old session, if that fails try initialising with new?!
-    // async decryptKey(encryptedMessage: EncryptedMessage): Promise<string | null> {
-    //     const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId);
-
-    //     if (key == null) {
-    //         return null; // This is not meant for this device so ignore it
-    //     }
-
-    //     const oldSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, false);
-    //     const currentSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, true);
-    //     let session: Session | null = null;
-    //     if (currentSession && currentSession.matches_inbound(key.key_base64)) {
-    //         console.log('Matches current session');
-    //         session = currentSession;
-    //         this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, session, true);
-    //     } else if (oldSession && oldSession.matches_inbound(key.key_base64)) {
-    //         console.log('Matches old session');
-    //         session = oldSession;
-    //         this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, session, true);
-    //         this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession as Session, true);
-    //     }
-    //     if(session) {
-    //         const decrypted = session.decrypt(key.type, key.key_base64);
-    //         //this._store.set(`${SESSION_STATE}/${encryptedMessage.from}`, 'ACKNOWLEDGED');
-    //         return decrypted;
-    //     } else {
-    //         console.log(`Doesn't match`);
-    //         if (key.type === 0) {
-    //             session = await this.initialiseInboundSession(encryptedMessage); //This doesn't work if a session has already been initialised
-    //             console.log(`Init inbound`);
-    //             this._sessionEvents.emit('sessionInitialised', encryptedMessage.from);
-
-    //             if (!session) {
-    //                 throw new Error(`Something went wrong establishing an inbound session: ${JSON.stringify(session)}`);
-    //             }
-
-    //             return this.decryptKey(encryptedMessage);
-    //         } else {
-    //             throw new Error('Sessions out of sync');
-    //             //
-    //             //throw new Error('')e; //TODO We can't handle this here, so we need to throw the error for the client to re-establish a new session. Emit an event for the client to do this? It will need the latest bundle and new prekey
-    //         }
-    //     }
-    // }
 
     get Account(): Account {
         return this._account;
@@ -404,27 +283,6 @@ export class SessionManager {
         return session;
     }
 
-    // private async initialiseInboundSession(keyExchangeMessage: EncryptedMessage): Promise<Session | null> {
-    //     const session = this.createSession(keyExchangeMessage.from, keyExchangeMessage.header.sid);
-    //     const key = keyExchangeMessage.header.keys.find(x => x.rid === this.DeviceId);
-
-    //     if (!key) {
-    //         return null;
-    //     }
-
-    //     session.create_inbound(this._account, key.key_base64);
-
-    //     this._account.remove_one_time_keys(session);
-    //     this._account.generate_one_time_keys(1);
-    //     this.updateOneTimeKeys();
-
-    //     this._sessions.set(`${keyExchangeMessage.from}/${keyExchangeMessage.header.sid}`, session);
-    //     this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
-    //     this.pickleSession(keyExchangeMessage.from, keyExchangeMessage.header.sid, session, true);
-
-    //     return session;
-    // }
-
     initialiseOutboundSession(jid: string, bundle: Bundle): void {
 
         if (!this.verifyBundle(bundle)) {
@@ -457,7 +315,7 @@ export class SessionManager {
             u.free();
             return true;
         } catch (e) {
-            // handle an untrusted bundle
+            //TODO handle an untrusted bundle
             return false;
         }
     }
