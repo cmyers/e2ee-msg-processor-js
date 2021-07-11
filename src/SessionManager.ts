@@ -44,10 +44,10 @@ export class SessionManager {
     private _devices: Array<Device> = [];
     private _preKeys: Array<PreKey> = [];
 
-    constructor(jid: string, storeName: string, localStorage: LocalStorage) {
+    constructor(jid: string, localStorage: LocalStorage) {
         this._jid = jid;
         this._account = new Account();
-        this._store = new NamespacedLocalStorage(storeName, localStorage);
+        this._store = new NamespacedLocalStorage(localStorage, jid);
 
         const pickledAccountId = this._store.get(PICKLED_ACCOUNT_ID);
         const deviceId = this._store.get(DEVICE_ID);

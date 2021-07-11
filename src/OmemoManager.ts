@@ -11,8 +11,8 @@ export class OmemoManager {
     private _messageManager: MessageProcessor;
     private readonly _sessionEvents = new EventEmitter();
 
-    constructor(jid: string, storeName: string, localStorage: LocalStorage) {
-        this._sessionManager = new SessionManager(jid, storeName, localStorage);
+    constructor(jid: string, localStorage: LocalStorage) {
+        this._sessionManager = new SessionManager(jid, localStorage);
         this._messageManager = new MessageProcessor(this._sessionManager);
     }
 
