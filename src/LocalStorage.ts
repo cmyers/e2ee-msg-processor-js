@@ -1,5 +1,5 @@
 export interface LocalStorage {
-    length: number;
+    get length(): number;
     key(index: number): string;
     getItem(key: string): string | null;
     setItem(key: string, value: string): void;

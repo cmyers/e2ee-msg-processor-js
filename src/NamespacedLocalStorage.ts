@@ -3,9 +3,11 @@ import { LocalStorage } from "./LocalStorage";
 export class NamespacedLocalStorage {
 
   private localStorage: LocalStorage;
+  private namespace: string;
 
-  constructor(location: string, localStorage: LocalStorage) {
+  constructor(localStorage: LocalStorage, namespace: string) {
     this.localStorage = localStorage;
+    this.namespace = `${namespace}/`;
   }
 
   containsKey(key: string): boolean {
@@ -33,7 +35,7 @@ export class NamespacedLocalStorage {
 
   get(key: string, default_ = null): string | null {
 
-    const item = this.localStorage.getItem(key);
+    const item = this.localStorage.getItem(this.namedSpacedKey(key));
     //console.log('get: ', key);
     //console.log('value', item);
 
@@ -49,14 +51,18 @@ export class NamespacedLocalStorage {
   }
 
   set(key: string, value: string): void {
-    this.localStorage.setItem(key, value);
+    this.localStorage.setItem(this.namedSpacedKey(key), value);
   }
 
   remove(key: string): void {
-    return this.localStorage.removeItem(key);
+    return this.localStorage.removeItem(this.namedSpacedKey(key));
   }
 
   has(key: string): boolean {
-    return this.localStorage.getItem(key) !== null;
+    return this.localStorage.getItem(this.namedSpacedKey(key)) !== null;
+  }
+
+  private namedSpacedKey(key: string) {
+    return this.namespace+key;
   }
 }

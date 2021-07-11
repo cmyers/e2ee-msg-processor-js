@@ -7,9 +7,6 @@ import { DEVICE_ID, SessionManager } from "./SessionManager";
 
 const crypto = new Crypto();
 const TAG_LENGTH = 128;
-
-//storage constants
-
 const KEY_ALGO = {
     name: 'AES-GCM',
     length: 128
@@ -100,12 +97,6 @@ export class MessageProcessor {
         return Buffer.from(decryptedArrayBuffer).toString();
     }
 
-    // TODO handle decryption failure cases
-    // - copy of already decrypted message - ignore decryption failure
-    // - establish a new session with the sender (reverse session initialisation?)
-    //TODO keep copy of last message sent in case of client decryption failure and session-re-establish attempt
-    //TODO Message Carbons - XMPP layer?
-    //TODO Message Archive - XMPP layer? 
     async processMessage(encryptedMessage: EncryptedMessage): Promise<string | null> {
         const decryptedKey = await this._sessionManager.decryptKey(encryptedMessage);
 
