@@ -57,7 +57,6 @@ export class OmemoManager {
         bundles.forEach(bundle => {
             this._sessionManager.initialiseOutboundSession(jid, bundle);
         });
-        
     }
 
     hasSession(jid: string, deviceId: number): boolean {

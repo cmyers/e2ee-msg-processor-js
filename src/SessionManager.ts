@@ -22,7 +22,6 @@ const PICKLED_SESSION_PREFIX = 'pickledSession/';
 const PICKLED_ACCOUNT = 'pickledAccount';
 const IDENTITY_PREFIX = 'identity/';
 const IDENTITY_KEY = 'identityKey';
-const PUBLISHED_PREKEYS = 'published_prekeys';
 const PREKEYS = 100;
 
 export interface EncryptedKey {
@@ -42,7 +41,6 @@ export class SessionManager {
     private readonly _deviceId: number;
     private readonly _pickledAccountId: number;
     private _devices: Array<Device> = [];
-    private _preKeys: Array<PreKey> = [];
 
     constructor(jid: string, localStorage: LocalStorage) {
         this._jid = jid;
@@ -51,13 +49,11 @@ export class SessionManager {
 
         const pickledAccountId = this._store.get(PICKLED_ACCOUNT_ID);
         const deviceId = this._store.get(DEVICE_ID);
-        const published_prekeys = this._store.get(PUBLISHED_PREKEYS);
         const pickledAccount = this._store.get(PICKLED_ACCOUNT);
 
         if (pickledAccount && pickledAccountId && deviceId) {
             this._pickledAccountId = parseInt(pickledAccountId);
             this._deviceId = parseInt(deviceId);
-            this._preKeys = published_prekeys ? JSON.parse(published_prekeys) : [];
             this._account.unpickle(this._pickledAccountId.toString(), pickledAccount);
         } else {
             const randValues = crypto.getRandomValues(new Uint32Array(2));
@@ -73,32 +69,24 @@ export class SessionManager {
         this._store.set(IDENTITY_KEY, this._idKey);
     }
 
-    private updateOneTimeKeys() {
+    private getPreKeys(): PreKey[] {
         const oneTimePreKeys = JSON.parse(this._account.one_time_keys()).curve25519;
-        this._preKeys = Object.keys(oneTimePreKeys).map((x, i) => {
+        return Object.keys(oneTimePreKeys).map((x, i) => {
             return {
                 id: i,
                 key: oneTimePreKeys[x]
             }
         });
-        this._store.set(PUBLISHED_PREKEYS, JSON.stringify(this._preKeys));
     }
 
     getPreKeyBundle(): Bundle {
         const randomIds = crypto.getRandomValues(new Uint32Array(2));
         const signedPreKeyId = randomIds[0];
-        if(this._preKeys.length === 0) {
+        const oneTimePreKeys = this.getPreKeys();
+        if(oneTimePreKeys.length === 0) {
             this._account.generate_one_time_keys(PREKEYS);
         }
         const signature = this._account.sign(signedPreKeyId + this._idKey);
-
-        // TODO CLARIFY:
-        //should be called once published to the server
-        //this removes the ability to expose the keys so once is called we can't retrieve them, only add new keys and publish again
-        //this logic needs to be checked, as we might not want to publish another bundle, only replace used keys and publish
-        //this._account.mark_keys_as_published();
-
-        this.updateOneTimeKeys();
 
         return {
             deviceId: this._deviceId,
@@ -106,7 +94,7 @@ export class SessionManager {
             spks: signature,
             spkId: signedPreKeyId,
             spk: JSON.parse(this._account.identity_keys()).ed25519,
-            prekeys: this._preKeys
+            prekeys: this.getPreKeys()
         };
     }
 
@@ -139,7 +127,7 @@ export class SessionManager {
 
     getSession(jid: string, deviceId: number, current: boolean): Session | null {
         const session = this._sessions.get(`${jid}/${deviceId}/${current ? 'current' : 'old'}`);
-        console.log(this._jid, 'gets Current Session', current, session);
+        console.log(this._jid, 'gets Current Session', jid, deviceId, current, session);
 
         if (!session) {
             return this.loadSession(jid, deviceId, current);
@@ -246,12 +234,12 @@ export class SessionManager {
     }
 
     private loadSession(jid: string, deviceId: number, current: boolean): Session | null {
-        const session = new Session();
-
+        console.log(`loading session from storage`, jid, deviceId);
         const pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}/${current ? 'current' : 'old'}`);
         const pickledSession = this._store.get(`${PICKLED_SESSION_PREFIX}${jid}/${deviceId}/${current ? 'current' : 'old'}`);
 
         if (pickledSessionKey && pickledSession) {
+            const session = new Session();
             console.log(chalk.blue(`Load ${this._jid}'s ${current ? 'current' : 'old'} session with ${jid}/${deviceId}: ${pickledSession}`));
             session.unpickle(pickledSessionKey, pickledSession);
             this._sessions.set(`${jid}/${deviceId}/${current ? 'current' : 'old'}`, session);
