@@ -83,7 +83,7 @@ export class SessionManager {
         const randomIds = crypto.getRandomValues(new Uint32Array(2));
         const signedPreKeyId = randomIds[0];
         const oneTimePreKeys = this.getPreKeys();
-        if(oneTimePreKeys.length === 0) {
+        if (oneTimePreKeys.length === 0) {
             this._account.generate_one_time_keys(PREKEYS);
         }
         const signature = this._account.sign(signedPreKeyId + this._idKey);
@@ -98,18 +98,17 @@ export class SessionManager {
         };
     }
 
-    updateDeviceIds(jid: string, deviceIds: Array<number>): void {
-        const newDeviceList = this._devices.filter(x => x.jid !== jid);
-
-        deviceIds.forEach(newDeviceId => {
-            newDeviceList.push({
-                id: newDeviceId,
+    updateDeviceIds(jid: string, newDeviceIds: Array<number>): void {
+        const updatedDevices = newDeviceIds.map<Device>(id => {
+            return {
+                id,
                 jid
-            })
+            };
         });
 
-        this._devices = newDeviceList;
-        this._store.set(`${DEVICEIDS_PREFIX}${jid}`, JSON.stringify(deviceIds));
+        this._devices = this._devices.filter(x => x.jid === jid);
+        this._devices.push(...updatedDevices);
+        this._store.set(`${DEVICEIDS_PREFIX}${jid}`, JSON.stringify(this.deviceIdsFor(jid)));
     }
 
     deviceIdsFor(jid: string): Array<number> {
@@ -117,9 +116,6 @@ export class SessionManager {
         if (devices.length === 0) {
             const deviceIds = this._store.get(`${DEVICEIDS_PREFIX}${jid}`);
             devices = deviceIds ? JSON.parse(deviceIds) : [];
-            if (devices?.length > 0) {
-                this.updateDeviceIds(jid, devices);
-            }
             return devices ? devices : [];
         }
         return devices;
@@ -132,7 +128,7 @@ export class SessionManager {
         if (!session) {
             return this.loadSession(jid, deviceId, current);
         }
-        
+
         return session;
     }
 
@@ -167,21 +163,22 @@ export class SessionManager {
 
         try {
             if (key.type === 0) {
-                if(currentSession && currentSession.matches_inbound(key.key_base64)) {
+                if (currentSession && currentSession.matches_inbound(key.key_base64)) {
                     const decrypted = currentSession.decrypt(key.type, key.key_base64);
                     this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, true);
                     return decrypted;
                 } else {
-                    if(currentSession) {
+                    if (currentSession) {
                         this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, false);
                     }
-                    
+
                     const session = this.createSession(encryptedMessage.from, encryptedMessage.header.sid);
                     session.create_inbound(this._account, key.key_base64);
-                    this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
 
                     this._account.remove_one_time_keys(session);
                     this._account.generate_one_time_keys(1);
+                    this._store.set(PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
+
                     const bundle = this.getPreKeyBundle();
                     this._sessionEvents.emit('bundleUpdated', bundle);
 
@@ -198,13 +195,13 @@ export class SessionManager {
                     throw new Error(`No current session`);
                 }
             }
-            
+
         } catch (e) {
             const oldSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, false);
-            if(oldSession) {
+            if (oldSession) {
                 const decrypted = oldSession.decrypt(key.type, key.key_base64);
                 this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, oldSession, true);
-                if(currentSession) {
+                if (currentSession) {
                     this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, false);
                 }
                 return decrypted;
@@ -254,7 +251,7 @@ export class SessionManager {
     //     this._sessions.delete(`${jid}/${deviceId}`);
     // }
 
-    private pickleSession(jid: string, deviceId: number, session: Session, current: boolean) { 
+    private pickleSession(jid: string, deviceId: number, session: Session, current: boolean) {
         let pickledSessionKey = this._store.get(`${PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}/${current ? 'current' : 'old'}`);
         if (!pickledSessionKey) {
             const randValues = crypto.getRandomValues(new Uint32Array(1));
