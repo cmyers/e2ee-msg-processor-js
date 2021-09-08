@@ -1,1 +1,1 @@
-omemo-olm-js
+e2ee-msg-processor-js
