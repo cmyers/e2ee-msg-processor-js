@@ -32,7 +32,7 @@
     "lint": "eslint . --ext .ts"
   },
   "author": "Chris Myers",
-  "license": "MIT",
+  "license": "Apache-2.0",
   "repository": {
     "type": "git",
     "url": "https://github.com/cmyers/e2ee-msg-processor-js.git"
