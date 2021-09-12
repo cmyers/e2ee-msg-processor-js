@@ -1,4 +1,4 @@
-import { PreKey } from "./PreKey";
+import { PreKey } from "./IPreKey";
 
 export interface Bundle {
     deviceId: number;
