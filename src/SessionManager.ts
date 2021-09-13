@@ -32,7 +32,6 @@ export class SessionManager {
     private readonly IDENTITY_KEY = 'identityKey';
     private readonly PREKEYS = 100;
 
-
     constructor(jid: string, localStorage: LocalStorage) {
         this._jid = jid;
         this._account = new Account();
@@ -58,16 +57,6 @@ export class SessionManager {
 
         this._idKey = JSON.parse(this._account.identity_keys()).curve25519;
         this._store.set(this.IDENTITY_KEY, this._idKey);
-    }
-
-    private getPreKeys(): PreKey[] {
-        const oneTimePreKeys = JSON.parse(this._account.one_time_keys()).curve25519;
-        return Object.keys(oneTimePreKeys).map((x, i) => {
-            return {
-                id: i,
-                key: oneTimePreKeys[x]
-            }
-        });
     }
 
     getPreKeyBundle(): Bundle {
@@ -201,6 +190,31 @@ export class SessionManager {
         }
     }
 
+    initialiseOutboundSession(jid: string, bundle: Bundle): void {
+
+        if (!this.verifyBundle(bundle)) {
+            throw new Error('Bundle verification failed');
+        }
+
+        console.log(chalk.blue(`${this._jid} verified ${jid}'s identity`));
+
+        const session = this.createSession(jid, bundle.deviceId);
+
+        // TODO implement isTrusted?
+        this._store.set(`${this.IDENTITY_PREFIX}${jid}/${bundle.deviceId}`, bundle.ik);
+
+        const otk_id = bundle.prekeys[this.crypto.getRandomValues(new Uint32Array(1))[0] % bundle.prekeys.length];
+
+        console.log(chalk.blue(`${this._jid} gets ${jid}/${bundle.deviceId}'s prekey: ${otk_id.key}`));
+
+        session.create_outbound(
+            this._account, bundle.ik, otk_id.key
+        );
+
+        this._store.set(this.PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
+        this.pickleSession(jid, bundle.deviceId, session, true);
+    }
+
     get Account(): Account {
         return this._account;
     }
@@ -253,29 +267,14 @@ export class SessionManager {
         return session;
     }
 
-    initialiseOutboundSession(jid: string, bundle: Bundle): void {
-
-        if (!this.verifyBundle(bundle)) {
-            throw new Error('Bundle verification failed');
-        }
-
-        console.log(chalk.blue(`${this._jid} verified ${jid}'s identity`));
-
-        const session = this.createSession(jid, bundle.deviceId);
-
-        // TODO implement isTrusted?
-        this._store.set(`${this.IDENTITY_PREFIX}${jid}/${bundle.deviceId}`, bundle.ik);
-
-        const otk_id = bundle.prekeys[this.crypto.getRandomValues(new Uint32Array(1))[0] % bundle.prekeys.length];
-
-        console.log(chalk.blue(`${this._jid} gets ${jid}/${bundle.deviceId}'s prekey: ${otk_id.key}`));
-
-        session.create_outbound(
-            this._account, bundle.ik, otk_id.key
-        );
-
-        this._store.set(this.PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
-        this.pickleSession(jid, bundle.deviceId, session, true);
+    private getPreKeys(): PreKey[] {
+        const oneTimePreKeys = JSON.parse(this._account.one_time_keys()).curve25519;
+        return Object.keys(oneTimePreKeys).map((x, i) => {
+            return {
+                id: i,
+                key: oneTimePreKeys[x]
+            }
+        });
     }
 
     private async verifyBundle(bundle: Bundle): Promise<boolean> {

@@ -18,20 +18,6 @@ export class MessageProcessor {
         this._sessionManager = sessionManager;
     }
 
-    private async encryptKey(jid: string, deviceId: number, key: CryptoKey, length: number, encryptedText: Buffer): Promise<Key> {
-        const tag = encryptedText.slice(length),
-            exported_key = Buffer.from(await this.crypto.subtle.exportKey('raw', key)),
-            key_tag = Buffer.from(DataUtils.appendBuffer(exported_key, tag)).toString('base64'),
-            encryptedKey = this._sessionManager.encryptKey(key_tag, jid, deviceId);
-
-        return {
-            jid,
-            key_base64: encryptedKey.body,
-            rid: deviceId,
-            type: encryptedKey.type
-        };
-    }
-
     async encryptMessage(jid: string, plaintext: string): Promise<EncryptedMessage> {
         const iv = this.crypto.getRandomValues(Buffer.alloc(12, 'utf-8')),
             key = await this.crypto.subtle.generateKey(this.KEY_ALGO, true, ['encrypt', 'decrypt']),
@@ -79,6 +65,36 @@ export class MessageProcessor {
         }
     }
 
+    async processMessage(encryptedMessage: EncryptedMessage): Promise<string | null> {
+        const decryptedKey = await this._sessionManager.decryptKey(encryptedMessage);
+
+        if (!decryptedKey) {
+            return null;
+        }
+
+        const deviceIds = this._sessionManager.deviceIdsFor(encryptedMessage.from);
+
+        if (!deviceIds.some(x => x === encryptedMessage.header.sid)) {
+            this._sessionManager.updateDeviceIds(encryptedMessage.from, [encryptedMessage.header.sid]);
+        }
+
+        return await this.decryptMessage(encryptedMessage, decryptedKey);
+    }
+
+    private async encryptKey(jid: string, deviceId: number, key: CryptoKey, length: number, encryptedText: Buffer): Promise<Key> {
+        const tag = encryptedText.slice(length),
+            exported_key = Buffer.from(await this.crypto.subtle.exportKey('raw', key)),
+            key_tag = Buffer.from(DataUtils.appendBuffer(exported_key, tag)).toString('base64'),
+            encryptedKey = this._sessionManager.encryptKey(key_tag, jid, deviceId);
+
+        return {
+            jid,
+            key_base64: encryptedKey.body,
+            rid: deviceId,
+            type: encryptedKey.type
+        };
+    }
+
     private async decryptMessage(encryptedMessage: EncryptedMessage, decryptedKey: string): Promise<string> {
         const key = Buffer.from(decryptedKey, 'base64').slice(0, 16);
         const tag = Buffer.from(decryptedKey, 'base64').slice(16);
@@ -94,21 +110,5 @@ export class MessageProcessor {
         const decryptedArrayBuffer = await this.crypto.subtle.decrypt(algo, key_obj, cipher);
 
         return Buffer.from(decryptedArrayBuffer).toString();
-    }
-
-    async processMessage(encryptedMessage: EncryptedMessage): Promise<string | null> {
-        const decryptedKey = await this._sessionManager.decryptKey(encryptedMessage);
-
-        if (!decryptedKey) {
-            return null;
-        }
-
-        const deviceIds = this._sessionManager.deviceIdsFor(encryptedMessage.from);
-
-        if (!deviceIds.some(x => x === encryptedMessage.header.sid)) {
-            this._sessionManager.updateDeviceIds(encryptedMessage.from, [encryptedMessage.header.sid]);
-        }
-
-        return await this.decryptMessage(encryptedMessage, decryptedKey);
     }
 }
