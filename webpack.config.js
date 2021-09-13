@@ -36,7 +36,6 @@ module.exports = {
     extensions: ['.ts']
   },
   output: {
-    library: 'omemotest',
     filename: '[name].js',
     path: path.resolve(__dirname, 'dist'),
     clean: true,
