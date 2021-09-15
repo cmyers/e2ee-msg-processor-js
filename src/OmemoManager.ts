@@ -2,13 +2,13 @@ import EventEmitter from "events";
 import { init as olmInit } from '@matrix-org/olm';
 import { MessageProcessor } from "./MessageProcessor";
 import { SessionManager } from "./SessionManager";
-import { LocalStorage }  from "./LocalStorage";
+import { LocalStorage } from "./LocalStorage";
 import { Bundle } from "./Bundle";
 import { EncryptedMessage } from "./EncryptedMessage";
 
 export class OmemoManager {
-    private _sessionManager: SessionManager;
-    private _messageManager: MessageProcessor;
+    private readonly _sessionManager: SessionManager;
+    private readonly _messageManager: MessageProcessor;
     private readonly _sessionEvents = new EventEmitter();
 
     constructor(jid: string, localStorage: LocalStorage) {
@@ -16,7 +16,7 @@ export class OmemoManager {
         this._messageManager = new MessageProcessor(this._sessionManager);
     }
 
-     static async init(): Promise<void> {
+    static async init(): Promise<void> {
         await olmInit();
     }
 
@@ -44,7 +44,7 @@ export class OmemoManager {
     async decryptMessage(encryptedMessage: EncryptedMessage): Promise<string | null> {
         try {
             return await this._messageManager.processMessage(encryptedMessage);
-        } catch(e) {
+        } catch (e) {
             console.log(e);
             this._sessionEvents.emit('decryptionFailed', encryptedMessage.from);
             return null;
