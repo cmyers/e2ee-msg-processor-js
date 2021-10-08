@@ -7,7 +7,7 @@ It uses an external library for the implementation of the Double Ratchet Algorit
 
 The key exchange and message format is loosely based on the OMEMO protocol which utilises 128 bit AES-GCM. Although OMEMO is an extension of the XMPP protocol, it doesn't require XMPP as the transmission medium. The message format is output as json and can be reconfigured for transmission at the developer's descretion.
 
-The LocalMessage interface will need implementing in order to provide a means of storing the sessions. In the example below we've used node-localstorage which is sufficent for our needs, however other situations may require a different storage mechanism so the implementation is left to the developer.
+The LocalStorage interface will need implementing in order to provide a means of storing the sessions. In the example below we've used node-localstorage which is sufficent for our needs, however other situations may require a different storage mechanism so the implementation is left to the developer.
 
 Here's a contrived example simulating sending a message between Alice and Bob:
 
