@@ -19,6 +19,19 @@ export class MessageProcessor {
     }
 
     async encryptMessage(jid: string, plaintext: string): Promise<EncryptedMessage> {
+        const deviceIds = this._sessionManager.deviceIdsFor(jid);
+        const selfDeviceIds = this._sessionManager.deviceIdsFor(this._sessionManager.JID);
+
+        if(deviceIds.length === 0) {
+            throw new Error("Recipient devices not yet processed or user does not exist.");
+        }
+
+        const sid = this._sessionManager.Store.get(DEVICE_ID);
+
+        if (!sid) {
+            throw new Error("Sender device ID missing from store");
+        }
+
         const iv = this.crypto.getRandomValues(Buffer.alloc(12, 'utf-8')),
             key = await this.crypto.subtle.generateKey(this.KEY_ALGO, true, ['encrypt', 'decrypt']),
             algo = {
@@ -30,10 +43,13 @@ export class MessageProcessor {
             length = encrypted.byteLength - 16,
             ciphertext = encrypted.slice(0, length);
 
-        const deviceIds = this._sessionManager.deviceIdsFor(jid);
         const keys: Array<Key> = [];
 
         for (const i in deviceIds) {
+            keys.push(await this.encryptKey(jid, deviceIds[i], key, length, encrypted));
+        }
+
+        for (const i in selfDeviceIds) {
             keys.push(await this.encryptKey(jid, deviceIds[i], key, length, encrypted));
         }
 
@@ -44,13 +60,7 @@ export class MessageProcessor {
                 keys.push(await this.encryptKey(this._sessionManager.JID, jidDeviceIds[i], key, length, encrypted));
             }
         }
-
-        const sid = this._sessionManager.Store.get(DEVICE_ID);
-
-        if (!sid) {
-            throw new Error("Sender device ID missing from store");
-        }
-
+        
         const sidParsed = parseInt(sid);
 
         return {
