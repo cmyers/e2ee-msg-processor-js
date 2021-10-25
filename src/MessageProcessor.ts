@@ -20,7 +20,6 @@ export class MessageProcessor {
 
     async encryptMessage(jid: string, plaintext: string): Promise<EncryptedMessage> {
         const deviceIds = this._sessionManager.deviceIdsFor(jid);
-        const selfDeviceIds = this._sessionManager.deviceIdsFor(this._sessionManager.JID);
 
         if(deviceIds.length === 0) {
             throw new Error("Recipient devices not yet processed or user does not exist.");
@@ -49,10 +48,6 @@ export class MessageProcessor {
             keys.push(await this.encryptKey(jid, deviceIds[i], key, length, encrypted));
         }
 
-        for (const i in selfDeviceIds) {
-            keys.push(await this.encryptKey(jid, deviceIds[i], key, length, encrypted));
-        }
-
         if (jid !== this._sessionManager.JID) {
             const jidDeviceIds = this._sessionManager.deviceIdsFor(this._sessionManager.JID);
 
@@ -76,19 +71,24 @@ export class MessageProcessor {
     }
 
     async processMessage(encryptedMessage: EncryptedMessage): Promise<string | null> {
-        const decryptedKey = await this._sessionManager.decryptKey(encryptedMessage);
+        try {
+            const decryptedKey = await this._sessionManager.decryptKey(encryptedMessage);
 
-        if (!decryptedKey) {
+            if (!decryptedKey) {
+                return null;
+            }
+
+            const deviceIds = this._sessionManager.deviceIdsFor(encryptedMessage.from);
+
+            if (!deviceIds.some(x => x === encryptedMessage.header.sid)) {
+                this._sessionManager.updateDeviceIds(encryptedMessage.from, [encryptedMessage.header.sid]);
+            }
+            return await this.decryptMessage(encryptedMessage, decryptedKey as string);
+        } catch(e) {
+            console.log('purging sessions that are no good');
+            this._sessionManager.purgeSessions(encryptedMessage.from, encryptedMessage.header.sid);
             return null;
         }
-
-        const deviceIds = this._sessionManager.deviceIdsFor(encryptedMessage.from);
-
-        if (!deviceIds.some(x => x === encryptedMessage.header.sid)) {
-            this._sessionManager.updateDeviceIds(encryptedMessage.from, [encryptedMessage.header.sid]);
-        }
-
-        return await this.decryptMessage(encryptedMessage, decryptedKey);
     }
 
     private async encryptKey(jid: string, deviceId: number, key: CryptoKey, length: number, encryptedText: Buffer): Promise<Key> {

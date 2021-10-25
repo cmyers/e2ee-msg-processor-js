@@ -179,6 +179,7 @@ export class SessionManager {
         } catch (e) {
             const oldSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, false);
             if (oldSession) {
+                console.log('Using old session');
                 const decrypted = oldSession.decrypt(key.type, key.key_base64);
                 this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, oldSession, true);
                 if (currentSession) {
@@ -285,6 +286,22 @@ export class SessionManager {
             return true;
         } catch (e) {
             //TODO handle an untrusted bundle
+            return false;
+        }
+    }
+
+    public purgeSessions(jid: string, deviceId: number): boolean {
+        try {
+            this._sessions.delete(`${jid}/${deviceId}/current`);
+            this._sessions.delete(`${jid}/${deviceId}/old`);
+            this._store.remove(`${this.PICKLED_SESSION_PREFIX}${jid}/${deviceId}/current`);
+            this._store.remove(`${this.PICKLED_SESSION_PREFIX}${jid}/${deviceId}/old`);
+            this._store.remove(`${this.PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}/current`);
+            this._store.remove(`${this.PICKLED_SESSION_KEY_PREFIX}${jid}/${deviceId}/old`);
+            return true;
+        }
+        catch(e) {
+            console.log('purging went wrong!', e);
             return false;
         }
     }
