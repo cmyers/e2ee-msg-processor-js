@@ -79,6 +79,8 @@ export class SessionManager {
     }
 
     updateDeviceIds(jid: string, newDeviceIds: Array<number>): void {
+        newDeviceIds = [...new Set(newDeviceIds.concat(this._devices.filter(x => x.jid === jid).map(x => x.id)))];
+
         const updatedDevices = newDeviceIds.map<Device>(id => {
             return {
                 id,
@@ -86,7 +88,6 @@ export class SessionManager {
             };
         });
 
-        this._devices = this._devices.filter(x => x.jid === jid);
         this._devices.push(...updatedDevices);
         this._store.set(`${this.DEVICEIDS_PREFIX}${jid}`, JSON.stringify(this.deviceIdsFor(jid)));
     }
@@ -136,7 +137,7 @@ export class SessionManager {
         const key = encryptedMessage.header.keys.find(x => x.rid === this._deviceId);
 
         if (key == null) {
-            return null;
+            throw new Error(`No key for ${this._deviceId}`);
         }
 
         const currentSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, true);

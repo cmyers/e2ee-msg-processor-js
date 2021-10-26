@@ -20,9 +20,9 @@ export class OmemoManager {
         await olmInit();
     }
 
-    onDecryptFailed(cb: (jid: string) => void): void {
+    onDecryptFailed(cb: (jid: string, eroor:Error) => void): void {
         this._sessionEvents.removeAllListeners();
-        this._sessionEvents.on('decryptionFailed', (jid: string) => cb(jid));
+        this._sessionEvents.on('decryptionFailed', (jid: string, error:Error) => cb(jid, error));
     }
 
     onSessionInitialised(cb: (jid: string) => void): void {
@@ -46,7 +46,7 @@ export class OmemoManager {
             return await this._messageManager.processMessage(encryptedMessage);
         } catch (e) {
             console.log(e);
-            this._sessionEvents.emit('decryptionFailed', encryptedMessage.from);
+            this._sessionEvents.emit('decryptionFailed', encryptedMessage.from, e);
             return null;
         }
     }

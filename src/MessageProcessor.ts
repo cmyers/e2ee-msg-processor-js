@@ -71,24 +71,13 @@ export class MessageProcessor {
     }
 
     async processMessage(encryptedMessage: EncryptedMessage): Promise<string | null> {
-        try {
-            const decryptedKey = await this._sessionManager.decryptKey(encryptedMessage);
+        const decryptedKey = await this._sessionManager.decryptKey(encryptedMessage);
+        const deviceIds = this._sessionManager.deviceIdsFor(encryptedMessage.from);
 
-            if (!decryptedKey) {
-                return null;
-            }
-
-            const deviceIds = this._sessionManager.deviceIdsFor(encryptedMessage.from);
-
-            if (!deviceIds.some(x => x === encryptedMessage.header.sid)) {
-                this._sessionManager.updateDeviceIds(encryptedMessage.from, [encryptedMessage.header.sid]);
-            }
-            return await this.decryptMessage(encryptedMessage, decryptedKey as string);
-        } catch(e) {
-            console.log('purging sessions that are no good');
-            this._sessionManager.purgeSessions(encryptedMessage.from, encryptedMessage.header.sid);
-            return null;
+        if (!deviceIds.some(x => x === encryptedMessage.header.sid)) {
+            this._sessionManager.updateDeviceIds(encryptedMessage.from, [encryptedMessage.header.sid]);
         }
+        return await this.decryptMessage(encryptedMessage, decryptedKey as string);
     }
 
     private async encryptKey(jid: string, deviceId: number, key: CryptoKey, length: number, encryptedText: Buffer): Promise<Key> {
