@@ -19,7 +19,7 @@ export class SessionManager {
     private readonly _idKey: string;
     private readonly _deviceId: number;
     private readonly _pickledAccountId: number;
-    //private _devices: Map<string, number> = [];
+    private _devices: Map<string, Array<number>>= new Map<string, Array<number>>();
     private readonly crypto = new Crypto();
 
     private readonly PICKLED_ACCOUNT_ID = 'pickledAccountId';
@@ -80,12 +80,21 @@ export class SessionManager {
     updateDeviceIds(jid: string, newDeviceIds: Array<number>): void {
         newDeviceIds = [...new Set(newDeviceIds.concat(this.deviceIdsFor(jid)))];
         console.log('newdevices:', newDeviceIds);
+        this._devices.set(jid, newDeviceIds);+
         this._store.set(`${this.DEVICEIDS_PREFIX}${jid}`, JSON.stringify(newDeviceIds));
     }
 
     deviceIdsFor(jid: string): Array<number> {
-        const deviceIds = this._store.get(`${this.DEVICEIDS_PREFIX}${jid}`);
-        return deviceIds ? JSON.parse(deviceIds) : [];
+        let deviceIds = this._devices.get(jid);
+
+        if(!deviceIds) {
+            const retrievedIds = this._store.get(`${this.DEVICEIDS_PREFIX}${jid}`);
+            if(retrievedIds) {
+                deviceIds =  JSON.parse(retrievedIds);
+            }
+        }
+
+        return deviceIds ? deviceIds : [];
     }
 
     getSession(jid: string, deviceId: number, current: boolean): Session | null {
@@ -164,6 +173,7 @@ export class SessionManager {
             }
 
         } catch (e) {
+            console.log(e);
             const oldSession = this.getSession(encryptedMessage.from, encryptedMessage.header.sid, false);
             if (oldSession) {
                 console.log('Using old session');
