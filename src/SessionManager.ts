@@ -7,7 +7,6 @@ import { Bundle } from './Bundle';
 import { EncryptedMessage } from './EncryptedMessage';
 import { PreKey } from './PreKey';
 import EventEmitter from 'events';
-import { Device } from './Device';
 import { EncryptedKey } from './EncryptedKey';
 import { DEVICE_ID } from './SharedConstants';
 
@@ -20,7 +19,7 @@ export class SessionManager {
     private readonly _idKey: string;
     private readonly _deviceId: number;
     private readonly _pickledAccountId: number;
-    private _devices: Array<Device> = [];
+    //private _devices: Map<string, number> = [];
     private readonly crypto = new Crypto();
 
     private readonly PICKLED_ACCOUNT_ID = 'pickledAccountId';
@@ -79,27 +78,14 @@ export class SessionManager {
     }
 
     updateDeviceIds(jid: string, newDeviceIds: Array<number>): void {
-        newDeviceIds = [...new Set(newDeviceIds.concat(this._devices.filter(x => x.jid === jid).map(x => x.id)))];
-
-        const updatedDevices = newDeviceIds.map<Device>(id => {
-            return {
-                id,
-                jid
-            };
-        });
-
-        this._devices.push(...updatedDevices);
-        this._store.set(`${this.DEVICEIDS_PREFIX}${jid}`, JSON.stringify(this.deviceIdsFor(jid)));
+        newDeviceIds = [...new Set(newDeviceIds.concat(this.deviceIdsFor(jid)))];
+        console.log('newdevices:', newDeviceIds);
+        this._store.set(`${this.DEVICEIDS_PREFIX}${jid}`, JSON.stringify(newDeviceIds));
     }
 
     deviceIdsFor(jid: string): Array<number> {
-        let devices = this._devices.filter(x => x.jid === jid).map(x => x.id);
-        if (devices.length === 0) {
-            const deviceIds = this._store.get(`${this.DEVICEIDS_PREFIX}${jid}`);
-            devices = deviceIds ? JSON.parse(deviceIds) : [];
-            return devices ? devices : [];
-        }
-        return devices;
+        const deviceIds = this._store.get(`${this.DEVICEIDS_PREFIX}${jid}`);
+        return deviceIds ? JSON.parse(deviceIds) : [];
     }
 
     getSession(jid: string, deviceId: number, current: boolean): Session | null {
