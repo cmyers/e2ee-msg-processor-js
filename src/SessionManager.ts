@@ -29,6 +29,8 @@ export class SessionManager {
     private readonly PICKLED_ACCOUNT = 'pickledAccount';
     private readonly IDENTITY_PREFIX = 'identity/';
     private readonly IDENTITY_KEY = 'identityKey';
+    private readonly BUNDLE_SPKS = 'BUNDLE_SPKS';
+    private readonly BUNDLE_SPKID = 'BUNDLE_SPKID';
     private readonly PREKEYS = 100;
 
     constructor(jid: string, localStorage: LocalStorage) {
@@ -43,9 +45,12 @@ export class SessionManager {
         if (pickledAccount && pickledAccountId && deviceId) {
             this._pickledAccountId = parseInt(pickledAccountId);
             this._deviceId = parseInt(deviceId);
+            console.log('unpickling account');
             this._account.unpickle(this._pickledAccountId.toString(), pickledAccount);
+            console.log(this.getPreKeys());
         } else {
             const randValues = this.crypto.getRandomValues(new Uint32Array(2));
+            console.log('created new account');
             this._account.create();
             this._pickledAccountId = randValues[0];
             this._deviceId = randValues[1];
@@ -58,7 +63,8 @@ export class SessionManager {
         this._store.set(this.IDENTITY_KEY, this._idKey);
     }
 
-    getPreKeyBundle(): Bundle {
+    generatePreKeyBundle(): Bundle {
+        console.log('getprekeybundle called');
         const randomIds = this.crypto.getRandomValues(new Uint32Array(2));
         const signedPreKeyId = randomIds[0];
         const oneTimePreKeys = this.getPreKeys();
@@ -66,6 +72,10 @@ export class SessionManager {
             this._account.generate_one_time_keys(this.PREKEYS);
         }
         const signature = this._account.sign(signedPreKeyId + this._idKey);
+
+        this._store.set(this.PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
+        this._store.set(this.BUNDLE_SPKS, signature);
+        this._store.set(this.BUNDLE_SPKID, signedPreKeyId.toString());
 
         return {
             deviceId: this._deviceId,
@@ -140,6 +150,7 @@ export class SessionManager {
         try {
             if (key.type === 0) {
                 if (currentSession && currentSession.matches_inbound(key.key_base64)) {
+                    console.log('matches inbound');
                     const decrypted = currentSession.decrypt(key.type, key.key_base64);
                     this.pickleSession(encryptedMessage.from, encryptedMessage.header.sid, currentSession, true);
                     return decrypted;
@@ -155,7 +166,15 @@ export class SessionManager {
                     this._account.generate_one_time_keys(1);
                     this._store.set(this.PICKLED_ACCOUNT, this._account.pickle(this._pickledAccountId.toString()));
 
-                    const bundle = this.getPreKeyBundle();
+                    const bundle: Bundle = {
+                        deviceId: this._deviceId,
+                        ik: this._idKey,
+                        spks: this._store.get(this.BUNDLE_SPKS) as string,
+                        spkId: parseInt(this._store.get(this.BUNDLE_SPKID) as string),
+                        spk: JSON.parse(this._account.identity_keys()).ed25519,
+                        prekeys: this.getPreKeys()
+                    };
+
                     this._sessionEvents.emit('bundleUpdated', bundle);
 
                     const decrypted = session.decrypt(key.type, key.key_base64);

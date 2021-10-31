@@ -34,7 +34,7 @@ export class OmemoManager {
     }
 
     generateBundle(): Bundle {
-        return this._sessionManager.getPreKeyBundle();
+        return this._sessionManager.generatePreKeyBundle();
     }
 
     encryptMessage(to: string, plainText: string): Promise<EncryptedMessage> {
