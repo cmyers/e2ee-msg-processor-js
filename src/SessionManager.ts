@@ -98,6 +98,7 @@ export class SessionManager {
         let deviceIds = this._devices.get(jid);
 
         if(!deviceIds) {
+            //TODO refresh the device ids from the server first, these could be out of date!
             const retrievedIds = this._store.get(`${this.DEVICEIDS_PREFIX}${jid}`);
             if(retrievedIds) {
                 deviceIds =  JSON.parse(retrievedIds);
