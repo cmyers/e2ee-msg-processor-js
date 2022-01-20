@@ -11,23 +11,11 @@ module.exports = {
   entry: {
     index: './src/index.ts'
   },
-  optimization: {
-    splitChunks: {
-      cacheGroups: {
-        common: {
-          name: "common",
-          chunks: "all"
-        }
-      }
-    }
-  },
   module: {
     rules: [
       {
         test: /\.ts?$/,
-        use: {
-          loader: 'ts-loader'
-        },
+        use: 'ts-loader',
         exclude: /node_modules/
       }
     ]
