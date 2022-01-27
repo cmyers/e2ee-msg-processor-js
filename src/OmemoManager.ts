@@ -2,7 +2,7 @@ import EventEmitter from "events";
 import { init as olmInit } from '@matrix-org/olm';
 import { MessageProcessor } from "./MessageProcessor";
 import { SessionManager } from "./SessionManager";
-import { LocalStorage } from "./LocalStorage";
+import { AsyncStorage } from "./AsyncStorage";
 import { Bundle } from "./Bundle";
 import { EncryptedMessage } from "./EncryptedMessage";
 
@@ -11,13 +11,14 @@ export class OmemoManager {
     private readonly _messageManager: MessageProcessor;
     private readonly _sessionEvents = new EventEmitter();
 
-    constructor(jid: string, localStorage: LocalStorage) {
+    constructor(jid: string, localStorage: AsyncStorage) {
         this._sessionManager = new SessionManager(jid, localStorage);
         this._messageManager = new MessageProcessor(this._sessionManager);
     }
 
     static async init(): Promise<void> {
         await olmInit();
+        console.log('it worked?');
     }
 
     onDecryptFailed(cb: (jid: string, eroor:Error) => void): void {
@@ -33,8 +34,8 @@ export class OmemoManager {
         this._sessionManager.onBundleUpdated(cb);
     }
 
-    generateBundle(): Bundle {
-        return this._sessionManager.generatePreKeyBundle();
+    async generateBundle(): Promise<Bundle> {
+        return await this._sessionManager.generatePreKeyBundle();
     }
 
     encryptMessage(to: string, plainText: string): Promise<EncryptedMessage> {
@@ -51,19 +52,19 @@ export class OmemoManager {
         }
     }
 
-    processDevices(jid: string, bundles: Array<Bundle>): void {
+    async processDevices(jid: string, bundles: Array<Bundle>): Promise<void> {
         this._sessionManager.updateDeviceIds(jid, bundles.map(x => x.deviceId));
 
-        bundles.forEach(bundle => {
-            this._sessionManager.initialiseOutboundSession(jid, bundle);
-        });
+        for(let bundle in bundles) {
+            await this._sessionManager.initialiseOutboundSession(jid, bundles[bundle]);
+        }
     }
 
-    hasSession(jid: string, deviceId: number): boolean {
-        return this._sessionManager.getSession(jid, deviceId, true) ? true : false;
+    async hasSession(jid: string, deviceId: number): Promise<boolean> {
+        return await this._sessionManager.getSession(jid, deviceId, true) ? true : false;
     }
 
-    getDeviceId(): number {
-        return this._sessionManager.DeviceId;
+    async getDeviceId(): Promise<number> {
+        return await this._sessionManager.DeviceId();
     }
 }

@@ -19,13 +19,13 @@ export class MessageProcessor {
     }
 
     async encryptMessage(jid: string, plaintext: string): Promise<EncryptedMessage> {
-        const deviceIds = this._sessionManager.deviceIdsFor(jid);
+        const deviceIds = await this._sessionManager.deviceIdsFor(jid);
 
         if(deviceIds.length === 0) {
             throw new Error("Recipient devices not yet processed or user does not exist.");
         }
 
-        const sid = this._sessionManager.Store.get(DEVICE_ID);
+        const sid = await this._sessionManager.Store.get(DEVICE_ID);
 
         if (!sid) {
             throw new Error("Sender device ID missing from store");
@@ -49,7 +49,7 @@ export class MessageProcessor {
         }
 
         if (jid !== this._sessionManager.JID) {
-            const jidDeviceIds = this._sessionManager.deviceIdsFor(this._sessionManager.JID);
+            const jidDeviceIds = await this._sessionManager.deviceIdsFor(this._sessionManager.JID);
 
             for (const i in jidDeviceIds) {
                 keys.push(await this.encryptKey(this._sessionManager.JID, jidDeviceIds[i], key, length, encrypted));
@@ -72,7 +72,7 @@ export class MessageProcessor {
 
     async processMessage(encryptedMessage: EncryptedMessage): Promise<string | null> {
         const decryptedKey = await this._sessionManager.decryptKey(encryptedMessage);
-        const deviceIds = this._sessionManager.deviceIdsFor(encryptedMessage.from);
+        const deviceIds = await this._sessionManager.deviceIdsFor(encryptedMessage.from);
 
         if (!deviceIds.some(x => x === encryptedMessage.header.sid)) {
             this._sessionManager.updateDeviceIds(encryptedMessage.from, [encryptedMessage.header.sid]);
@@ -84,7 +84,7 @@ export class MessageProcessor {
         const tag = encryptedText.slice(length),
             exported_key = Buffer.from(await this.crypto.subtle.exportKey('raw', key)),
             key_tag = Buffer.from(DataUtils.appendBuffer(exported_key, tag)).toString('base64'),
-            encryptedKey = this._sessionManager.encryptKey(key_tag, jid, deviceId);
+            encryptedKey = await this._sessionManager.encryptKey(key_tag, jid, deviceId);
 
         return {
             jid,

@@ -1,41 +1,22 @@
-import { LocalStorage } from "./LocalStorage";
+import { AsyncStorage } from "./AsyncStorage";
 
 export class NamespacedLocalStorage {
 
-  private localStorage: LocalStorage;
+  private localStorage: AsyncStorage;
   private namespace: string;
 
-  constructor(localStorage: LocalStorage, namespace: string) {
+  constructor(localStorage: AsyncStorage, namespace: string) {
     this.localStorage = localStorage;
     this.namespace = `${namespace}/`;
   }
 
-  containsKey(key: string): boolean {
-    for (let i = 0; i < this.localStorage.length; i++) {
-      if (this.localStorage.key(i).includes(key)) {
-        return true;
-      }
-    }
-    return false;
+  async hasItems(): Promise<boolean> {
+    return await this.localStorage.length() > 0;
   }
 
-  itemsContaining(partialKey: string): Array<string> {
-    const items: Array<string> = [];
-    for (let i = 0; i < this.localStorage.length; i++) {
-      if (this.localStorage.key(i).includes(partialKey)) {
-        items.push(this.localStorage.key(i));
-      }
-    }
-    return items;
-  }
+  async get(key: string, default_ = null): Promise<any> {
 
-  hasItems(): boolean {
-    return this.localStorage.length > 0;
-  }
-
-  get(key: string, default_ = null): string | null {
-
-    const item = this.localStorage.getItem(this.namedSpacedKey(key));
+    const item = await this.localStorage.get(this.namedSpacedKey(key));
 
     if (item === null) {
       return default_;
@@ -48,16 +29,16 @@ export class NamespacedLocalStorage {
     }
   }
 
-  set(key: string, value: string): void {
-    this.localStorage.setItem(this.namedSpacedKey(key), value);
+  async set(key: string, value: string): Promise<void> {
+    await this.localStorage.set(this.namedSpacedKey(key), value);
   }
 
-  remove(key: string): void {
-    return this.localStorage.removeItem(this.namedSpacedKey(key));
+  async remove(key: string): Promise<void> {
+    return await this.localStorage.remove(this.namedSpacedKey(key));
   }
 
-  has(key: string): boolean {
-    return this.localStorage.getItem(this.namedSpacedKey(key)) !== null;
+  async has(key: string): Promise<boolean> {
+    return await this.localStorage.get(this.namedSpacedKey(key)) !== null;
   }
 
   private namedSpacedKey(key: string) {
