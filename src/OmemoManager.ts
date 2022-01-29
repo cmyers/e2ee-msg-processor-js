@@ -18,7 +18,10 @@ export class OmemoManager {
 
     static async init(): Promise<void> {
         await olmInit();
-        console.log('it worked?');
+    }
+
+    async initAccountStorage(): Promise<void> {
+        await this._sessionManager.init();
     }
 
     onDecryptFailed(cb: (jid: string, eroor:Error) => void): void {
@@ -64,7 +67,7 @@ export class OmemoManager {
         return await this._sessionManager.getSession(jid, deviceId, true) ? true : false;
     }
 
-    async getDeviceId(): Promise<number> {
-        return await this._sessionManager.DeviceId();
+    getDeviceId(): number {
+        return this._sessionManager.DeviceId;
     }
 }

@@ -39,7 +39,7 @@ export class SessionManager {
         this._store = new NamespacedLocalStorage(localStorage, jid);
     }
 
-    private async init() {
+    public async init() {
         const pickledAccountId = await this._store.get(this.PICKLED_ACCOUNT_ID);
         const deviceId = await this._store.get(DEVICE_ID);
         const pickledAccount = await this._store.get(this.PICKLED_ACCOUNT);
@@ -247,10 +247,7 @@ export class SessionManager {
         return this._jid;
     }
 
-    async DeviceId(): Promise<number> {
-        if(!this._deviceId) {
-            await this.init();
-        }
+    get DeviceId(): number {
         return this._deviceId as number;
     }
 
