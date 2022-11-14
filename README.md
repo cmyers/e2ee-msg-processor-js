@@ -1,5 +1,4 @@
 # e2ee-msg-processor-js
-<a href="https://www.npmjs.com/package/e2ee-msg-processor-js"><img src="https://img.shields.io/npm/v/e2ee-msg-processor-js" /></a>
 
 End to end encryption message processor which can be used to encrypt messages between two or more devices running on any platform and sent over any messaging protocol.
 
